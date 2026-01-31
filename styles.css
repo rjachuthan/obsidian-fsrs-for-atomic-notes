@@ -1,8 +1,377 @@
-/*
+/**
+ * FSRS for Atomic Notes - Styles
+ *
+ * Uses CSS custom properties for theming compatibility
+ */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* ============================================================================
+   Sidebar Container
+   ============================================================================ */
 
-If your plugin does not need CSS, delete this file.
+.fsrs-sidebar {
+	padding: var(--size-4-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
 
-*/
+/* ============================================================================
+   Idle State
+   ============================================================================ */
+
+.fsrs-idle-container {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	align-items: center;
+	padding: var(--size-4-4) 0;
+}
+
+.fsrs-idle-message {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-align: center;
+}
+
+.fsrs-idle-stats {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: var(--size-4-2);
+	width: 100%;
+}
+
+.fsrs-start-button {
+	width: 100%;
+	margin-top: var(--size-4-2);
+}
+
+.fsrs-button-disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* ============================================================================
+   Queue Header
+   ============================================================================ */
+
+.fsrs-queue-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-bottom: var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fsrs-queue-name {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+/* ============================================================================
+   Progress
+   ============================================================================ */
+
+.fsrs-progress-container {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.fsrs-progress-text {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.fsrs-progress-bar {
+	height: 6px;
+	background: var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	overflow: hidden;
+}
+
+.fsrs-progress-fill {
+	height: 100%;
+	background: var(--interactive-accent);
+	border-radius: var(--radius-s);
+	transition: width 0.3s ease-out;
+}
+
+/* ============================================================================
+   Rating Buttons
+   ============================================================================ */
+
+.fsrs-rating-buttons {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.fsrs-rating-button {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.fsrs-rating-button:hover {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.fsrs-rating-button:active {
+	transform: scale(0.98);
+}
+
+.fsrs-rating-label {
+	font-weight: var(--font-medium);
+	font-size: var(--font-ui-medium);
+}
+
+.fsrs-rating-interval {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-top: var(--size-4-1);
+}
+
+/* Rating button colors */
+.fsrs-rating-again {
+	border-left: 3px solid var(--color-red);
+}
+
+.fsrs-rating-again:hover {
+	background: rgba(var(--color-red-rgb), 0.1);
+}
+
+.fsrs-rating-hard {
+	border-left: 3px solid var(--color-orange);
+}
+
+.fsrs-rating-hard:hover {
+	background: rgba(var(--color-orange-rgb), 0.1);
+}
+
+.fsrs-rating-good {
+	border-left: 3px solid var(--color-green);
+}
+
+.fsrs-rating-good:hover {
+	background: rgba(var(--color-green-rgb), 0.1);
+}
+
+.fsrs-rating-easy {
+	border-left: 3px solid var(--color-cyan);
+}
+
+.fsrs-rating-easy:hover {
+	background: rgba(var(--color-cyan-rgb), 0.1);
+}
+
+/* ============================================================================
+   Navigation Prompt
+   ============================================================================ */
+
+.fsrs-navigation-prompt {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-4-3);
+	padding: var(--size-4-4);
+	background: var(--background-secondary);
+	border-radius: var(--radius-m);
+}
+
+.fsrs-prompt-message {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.fsrs-bring-back-button {
+	width: 100%;
+}
+
+/* ============================================================================
+   Navigation Controls
+   ============================================================================ */
+
+.fsrs-nav-controls {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: center;
+}
+
+.fsrs-nav-button {
+	flex: 1;
+	padding: var(--size-4-1) var(--size-4-2);
+	font-size: var(--font-ui-small);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.fsrs-nav-button:hover:not(:disabled) {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+.fsrs-nav-button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* ============================================================================
+   Stats Sections
+   ============================================================================ */
+
+.fsrs-stats-section {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-4-2);
+}
+
+.fsrs-stats-header {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: var(--size-4-2);
+}
+
+.fsrs-stats-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: var(--size-4-1) var(--size-4-2);
+}
+
+.fsrs-stat-item {
+	display: flex;
+	justify-content: space-between;
+	font-size: var(--font-ui-small);
+}
+
+.fsrs-stat-label {
+	color: var(--text-muted);
+}
+
+.fsrs-stat-value {
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}
+
+/* ============================================================================
+   End Session
+   ============================================================================ */
+
+.fsrs-end-section {
+	margin-top: auto;
+	padding-top: var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.fsrs-end-button {
+	width: 100%;
+	padding: var(--size-4-2);
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.fsrs-end-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--text-muted);
+}
+
+/* ============================================================================
+   Settings Tab
+   ============================================================================ */
+
+.fsrs-settings-section {
+	margin-bottom: var(--size-4-6);
+}
+
+.fsrs-settings-section-title {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	margin-bottom: var(--size-4-3);
+	padding-bottom: var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fsrs-folder-list,
+.fsrs-tag-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-2);
+}
+
+.fsrs-folder-item,
+.fsrs-tag-item {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2);
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+}
+
+.fsrs-folder-item span,
+.fsrs-tag-item span {
+	flex: 1;
+}
+
+.fsrs-remove-button {
+	padding: var(--size-4-1);
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	border-radius: var(--radius-s);
+}
+
+.fsrs-remove-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--color-red);
+}
+
+.fsrs-add-button {
+	padding: var(--size-4-2);
+	background: var(--background-secondary);
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	color: var(--text-muted);
+	transition: all 0.15s ease;
+}
+
+.fsrs-add-button:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+/* ============================================================================
+   Utility Classes
+   ============================================================================ */
+
+.fsrs-hidden {
+	display: none !important;
+}
+
+.fsrs-text-muted {
+	color: var(--text-muted);
+}
+
+.fsrs-text-accent {
+	color: var(--interactive-accent);
+}

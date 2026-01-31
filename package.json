@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-fsrs-atomic",
+	"version": "0.1.0",
+	"description": "Spaced repetition for atomic notes using the FSRS algorithm",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -24,6 +24,7 @@
 		"jiti": "2.6.1"
 	},
 	"dependencies": {
-		"obsidian": "latest"
+		"obsidian": "latest",
+		"ts-fsrs": "^4.5.0"
 	}
 }

@@ -1,99 +1,169 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+/**
+ * FSRS for Atomic Notes - Main Plugin Entry Point
+ *
+ * This file handles plugin lifecycle only. All feature logic is delegated to modules.
+ */
 
-// Remember to rename these classes and interfaces!
+import { Plugin, WorkspaceLeaf } from "obsidian";
+import { DataStore } from "./data";
+import { Scheduler, CardManager } from "./fsrs";
+import { QueueManager } from "./queues";
+import { SessionManager } from "./review";
+import { ReviewSidebar, SettingsTab } from "./ui";
+import { registerCommands } from "./commands";
+import { REVIEW_SIDEBAR_VIEW_TYPE } from "./constants";
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class FSRSPlugin extends Plugin {
+	// Core services
+	private dataStore!: DataStore;
+	private scheduler!: Scheduler;
+	private cardManager!: CardManager;
+	private queueManager!: QueueManager;
+	private sessionManager!: SessionManager;
 
-	async onload() {
-		await this.loadSettings();
+	async onload(): Promise<void> {
+		// Initialize data store
+		this.dataStore = new DataStore(this);
+		await this.dataStore.initialize();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		// Initialize FSRS scheduler
+		const settings = this.dataStore.getSettings();
+		this.scheduler = new Scheduler(settings.fsrsParams);
+
+		// Initialize card manager
+		this.cardManager = new CardManager(this.dataStore, this.scheduler);
+
+		// Initialize queue manager
+		this.queueManager = new QueueManager(
+			this.app,
+			this.dataStore,
+			this.cardManager,
+			settings
+		);
+
+		// Initialize session manager
+		this.sessionManager = new SessionManager(
+			this.app,
+			this.dataStore,
+			this.cardManager,
+			this.queueManager,
+			this.scheduler
+		);
+
+		// Register sidebar view
+		this.registerView(REVIEW_SIDEBAR_VIEW_TYPE, (leaf) => {
+			return new ReviewSidebar(
+				leaf,
+				this.sessionManager,
+				this.queueManager,
+				this.dataStore
+			);
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
+		// Register settings tab
+		this.addSettingTab(
+			new SettingsTab(
+				this.app,
+				this,
+				this.dataStore,
+				this.queueManager,
+				(newSettings) => {
+					// Update dependent services when settings change
+					this.queueManager.updateSettings(newSettings);
+					if (newSettings.fsrsParams) {
+						this.scheduler.updateParams(newSettings.fsrsParams);
 					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
 				}
-				return false;
+			)
+		);
+
+		// Register commands
+		registerCommands(this, this.sessionManager, this.queueManager);
+
+		// Add ribbon icon
+		this.addRibbonIcon("brain", "Start review session", async () => {
+			await this.activateSidebar();
+		});
+
+		// Sync default queue on startup
+		this.app.workspace.onLayoutReady(() => {
+			void Promise.resolve().then(() => {
+				this.queueManager.syncDefaultQueue();
+			});
+		});
+
+		// Watch for file changes
+		this.registerVaultEvents();
+	}
+
+	onunload(): void {
+		// End any active session
+		this.sessionManager.endSession();
+
+		// Save any pending data
+		void this.dataStore.forceSave();
+	}
+
+	/**
+	 * Activate the review sidebar
+	 */
+	private async activateSidebar(): Promise<void> {
+		const { workspace } = this.app;
+
+		let leaf: WorkspaceLeaf | undefined;
+		const leaves = workspace.getLeavesOfType(REVIEW_SIDEBAR_VIEW_TYPE);
+
+		if (leaves.length > 0) {
+			// View already exists, reveal it
+			leaf = leaves[0];
+		} else {
+			// Create new leaf in sidebar
+			const settings = this.dataStore.getSettings();
+			leaf = settings.sidebarPosition === "left"
+				? workspace.getLeftLeaf(false) ?? undefined
+				: workspace.getRightLeaf(false) ?? undefined;
+
+			if (leaf) {
+				await leaf.setViewState({
+					type: REVIEW_SIDEBAR_VIEW_TYPE,
+					active: true,
+				});
 			}
-		});
+		}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		if (leaf) {
+			void workspace.revealLeaf(leaf);
+		}
 	}
 
-	onunload() {
-	}
+	/**
+	 * Register vault event listeners for note changes
+	 */
+	private registerVaultEvents(): void {
+		// Handle file renames
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				if (file.path.endsWith(".md")) {
+					const card = this.cardManager.getCard(oldPath);
+					if (card) {
+						this.cardManager.renameCard(oldPath, file.path);
+					}
+				}
+			})
+		);
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+		// Handle file deletions
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (file.path.endsWith(".md")) {
+					const card = this.cardManager.getCard(file.path);
+					if (card) {
+						// For now, just delete the card
+						// Future: Create orphan record
+						this.cardManager.deleteCard(file.path);
+					}
+				}
+			})
+		);
 	}
 }
