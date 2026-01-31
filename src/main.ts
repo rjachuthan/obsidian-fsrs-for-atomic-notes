@@ -4,14 +4,29 @@
  * This file handles plugin lifecycle only. All feature logic is delegated to modules.
  */
 
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
 import { DataStore } from "./data";
 import { Scheduler, CardManager } from "./fsrs";
 import { QueueManager } from "./queues";
 import { SessionManager } from "./review";
-import { ReviewSidebar, SettingsTab } from "./ui";
+import { NoteWatcher, OrphanDetector } from "./sync";
+import {
+	ReviewSidebar,
+	SettingsTab,
+	DashboardModal,
+	QueueListModal,
+	QueueSelectorModal,
+} from "./ui";
 import { registerCommands } from "./commands";
-import { REVIEW_SIDEBAR_VIEW_TYPE } from "./constants";
+import {
+	REVIEW_SIDEBAR_VIEW_TYPE,
+	COMMANDS,
+	COMMAND_NAMES,
+	NOTICE_DURATION_MS,
+} from "./constants";
+
+/** Interval for periodic orphan detection (5 minutes) */
+const ORPHAN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export default class FSRSPlugin extends Plugin {
 	// Core services
@@ -20,6 +35,10 @@ export default class FSRSPlugin extends Plugin {
 	private cardManager!: CardManager;
 	private queueManager!: QueueManager;
 	private sessionManager!: SessionManager;
+
+	// Sync services
+	private noteWatcher!: NoteWatcher;
+	private orphanDetector!: OrphanDetector;
 
 	async onload(): Promise<void> {
 		// Initialize data store
@@ -50,6 +69,13 @@ export default class FSRSPlugin extends Plugin {
 			this.scheduler
 		);
 
+		// Initialize sync services
+		this.noteWatcher = new NoteWatcher(this.app, this.cardManager, this.dataStore);
+		this.orphanDetector = new OrphanDetector(this.app, this.cardManager, this.dataStore);
+
+		// Register vault events via NoteWatcher
+		this.noteWatcher.registerEvents(this);
+
 		// Register sidebar view
 		this.registerView(REVIEW_SIDEBAR_VIEW_TYPE, (leaf) => {
 			return new ReviewSidebar(
@@ -77,23 +103,34 @@ export default class FSRSPlugin extends Plugin {
 			)
 		);
 
-		// Register commands
+		// Register all commands
 		registerCommands(this, this.sessionManager, this.queueManager);
+		this.registerAdditionalCommands();
 
-		// Add ribbon icon
+		// Add ribbon icons
 		this.addRibbonIcon("brain", "Start review session", async () => {
 			await this.activateSidebar();
+		});
+
+		this.addRibbonIcon("bar-chart-2", "Open dashboard", () => {
+			this.openDashboard();
 		});
 
 		// Sync default queue on startup
 		this.app.workspace.onLayoutReady(() => {
 			void Promise.resolve().then(() => {
 				this.queueManager.syncDefaultQueue();
+				// Initial orphan detection
+				this.orphanDetector.detectOrphans();
 			});
 		});
 
-		// Watch for file changes
-		this.registerVaultEvents();
+		// Register periodic orphan check
+		this.registerInterval(
+			window.setInterval(() => {
+				this.orphanDetector.detectOrphans();
+			}, ORPHAN_CHECK_INTERVAL_MS)
+		);
 	}
 
 	onunload(): void {
@@ -102,6 +139,104 @@ export default class FSRSPlugin extends Plugin {
 
 		// Save any pending data
 		void this.dataStore.forceSave();
+	}
+
+	/**
+	 * Register additional commands not in the main commands module
+	 */
+	private registerAdditionalCommands(): void {
+		// Open Dashboard
+		this.addCommand({
+			id: COMMANDS.OPEN_DASHBOARD,
+			name: COMMAND_NAMES[COMMANDS.OPEN_DASHBOARD],
+			callback: () => {
+				this.openDashboard();
+			},
+		});
+
+		// Manage Queues
+		this.addCommand({
+			id: COMMANDS.MANAGE_QUEUES,
+			name: COMMAND_NAMES[COMMANDS.MANAGE_QUEUES],
+			callback: () => {
+				this.openQueueManager();
+			},
+		});
+
+		// Add to Queue
+		this.addCommand({
+			id: COMMANDS.ADD_TO_QUEUE,
+			name: COMMAND_NAMES[COMMANDS.ADD_TO_QUEUE],
+			checkCallback: (checking: boolean) => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (!activeFile || !activeFile.path.endsWith(".md")) {
+					return false;
+				}
+				if (!checking) {
+					this.addCurrentNoteToQueue();
+				}
+				return true;
+			},
+		});
+
+		// Override start-review to show queue selector if multiple queues
+		// Note: The original command is still registered, this is an enhancement
+	}
+
+	/**
+	 * Open the dashboard modal
+	 */
+	private openDashboard(): void {
+		const modal = new DashboardModal(this.app, this.dataStore, this.queueManager);
+		modal.open();
+	}
+
+	/**
+	 * Open queue manager modal
+	 */
+	private openQueueManager(): void {
+		const modal = new QueueListModal(
+			this.app,
+			this.queueManager,
+			this.dataStore,
+			(queueId) => {
+				void this.sessionManager.startSession(queueId);
+				void this.activateSidebar();
+			}
+		);
+		modal.open();
+	}
+
+	/**
+	 * Add current note to a queue
+	 */
+	private addCurrentNoteToQueue(): void {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice("No active note", NOTICE_DURATION_MS);
+			return;
+		}
+
+		const queues = this.queueManager.getAllQueues();
+
+		if (queues.length === 1) {
+			// Only one queue, add directly
+			const queue = queues[0];
+			if (queue) {
+				this.cardManager.createCard(activeFile.path, queue.id);
+				this.queueManager.updateQueueStats(queue.id);
+				new Notice(`Added to "${queue.name}"`, NOTICE_DURATION_MS);
+			}
+		} else {
+			// Show queue selector
+			const modal = new QueueSelectorModal(this.app, this.queueManager, (queueId) => {
+				this.cardManager.createCard(activeFile.path, queueId);
+				this.queueManager.updateQueueStats(queueId);
+				const queue = this.queueManager.getQueue(queueId);
+				new Notice(`Added to "${queue?.name ?? queueId}"`, NOTICE_DURATION_MS);
+			});
+			modal.open();
+		}
 	}
 
 	/**
@@ -134,36 +269,5 @@ export default class FSRSPlugin extends Plugin {
 		if (leaf) {
 			void workspace.revealLeaf(leaf);
 		}
-	}
-
-	/**
-	 * Register vault event listeners for note changes
-	 */
-	private registerVaultEvents(): void {
-		// Handle file renames
-		this.registerEvent(
-			this.app.vault.on("rename", (file, oldPath) => {
-				if (file.path.endsWith(".md")) {
-					const card = this.cardManager.getCard(oldPath);
-					if (card) {
-						this.cardManager.renameCard(oldPath, file.path);
-					}
-				}
-			})
-		);
-
-		// Handle file deletions
-		this.registerEvent(
-			this.app.vault.on("delete", (file) => {
-				if (file.path.endsWith(".md")) {
-					const card = this.cardManager.getCard(file.path);
-					if (card) {
-						// For now, just delete the card
-						// Future: Create orphan record
-						this.cardManager.deleteCard(file.path);
-					}
-				}
-			})
-		);
 	}
 }

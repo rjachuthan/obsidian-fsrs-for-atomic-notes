@@ -116,6 +116,36 @@ export function registerCommands(
 			return true;
 		},
 	});
+
+	// Previous Note (Go Back)
+	plugin.addCommand({
+		id: COMMANDS.PREVIOUS_NOTE,
+		name: COMMAND_NAMES[COMMANDS.PREVIOUS_NOTE],
+		checkCallback: (checking: boolean) => {
+			if (!sessionManager.isActive() || !sessionManager.canGoBack()) {
+				return false;
+			}
+			if (!checking) {
+				void sessionManager.goBack();
+			}
+			return true;
+		},
+	});
+
+	// Undo Last Rating
+	plugin.addCommand({
+		id: COMMANDS.UNDO_RATING,
+		name: COMMAND_NAMES[COMMANDS.UNDO_RATING],
+		checkCallback: (checking: boolean) => {
+			if (!sessionManager.isActive() || !sessionManager.canUndo()) {
+				return false;
+			}
+			if (!checking) {
+				void sessionManager.undoLastRating();
+			}
+			return true;
+		},
+	});
 }
 
 /**
