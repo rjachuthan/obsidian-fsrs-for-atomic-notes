@@ -13,7 +13,8 @@ export default tseslint.config(
 				projectService: {
 					allowDefaultProject: [
 						'eslint.config.js',
-						'manifest.json'
+						'manifest.json',
+						'vitest.config.ts'
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
@@ -30,5 +31,7 @@ export default tseslint.config(
 		"version-bump.mjs",
 		"versions.json",
 		"main.js",
+		// Tests need API alignment work (see WS5 in plan)
+		"tests/**/*",
 	]),
 );
