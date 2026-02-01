@@ -87,6 +87,10 @@ export class Vault {
 		return this.files.get(path) || this.folders.get(path) || null;
 	}
 
+	getFileByPath(path: string): TFile | null {
+		return this.files.get(path) || null;
+	}
+
 	getMarkdownFiles(): TFile[] {
 		return Array.from(this.files.values()).filter(f => f.extension === 'md');
 	}
@@ -172,6 +176,15 @@ export class Vault {
 	}
 }
 
+// Mock WorkspaceLeaf (minimal for SessionManager.openCurrentNote)
+export class WorkspaceLeaf {
+	constructor(private workspace: Workspace) {}
+
+	async openFile(file: TFile): Promise<void> {
+		this.workspace.setActiveFile(file);
+	}
+}
+
 // Mock Workspace
 export class Workspace {
 	private activeFile: TFile | null = null;
@@ -183,6 +196,10 @@ export class Workspace {
 	setActiveFile(file: TFile | null): void {
 		this.activeFile = file;
 		this.trigger('active-leaf-change');
+	}
+
+	getLeaf(_createNew: boolean): WorkspaceLeaf {
+		return new WorkspaceLeaf(this);
 	}
 
 	on(event: string, callback: (...args: unknown[]) => void): { unload: () => void } {

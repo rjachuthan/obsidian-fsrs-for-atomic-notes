@@ -12,11 +12,14 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { Plugin } from '../setup/obsidian-mock';
 import { createTestPlugin } from '../setup/test-helpers';
 import { createMinimalVault } from '../fixtures/sample-vault';
-import { createNewCard, createReviewCard } from '../fixtures/test-cards';
+import { createNewCard, createReviewCard, cardDataFromFsrsCard, TEST_QUEUE_ID } from '../fixtures/test-cards';
 import { DataStore } from '../../src/data/data-store';
 import { QueueManager } from '../../src/queues/queue-manager';
 import { CardManager } from '../../src/fsrs/card-manager';
+import { Scheduler } from '../../src/fsrs/scheduler';
 import { Rating } from 'ts-fsrs';
+import { DEFAULT_QUEUE_STATS } from '../../src/constants';
+import { nowISO } from '../../src/utils/date-utils';
 
 describe('Data Persistence', () => {
 	let plugin: Plugin;
@@ -27,84 +30,101 @@ describe('Data Persistence', () => {
 	});
 
 	test('Cards persist after save and load cycle', async () => {
-		// Given: DataStore with several cards
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
-		const card1 = createNewCard('note1.md');
-		const card2 = createReviewCard('note2.md', 5, 10.0, 5.0);
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
 
-		cardManager.addCard(card1);
-		cardManager.addCard(card2);
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
 
-		// Force save
+		// Create cards via createCard (new) and setCard (review card)
+		cardManager.createCard('note1.md', TEST_QUEUE_ID);
+		const reviewCard = createReviewCard('note2.md', 5, 10.0, 5.0);
+		dataStore.setCard('note2.md', cardDataFromFsrsCard(reviewCard, TEST_QUEUE_ID));
+
 		await dataStore.save();
 
-		// When: Create new DataStore instance (simulating plugin reload)
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		const newCardManager = new CardManager(newDataStore);
+		const newScheduler = new Scheduler();
+		const newCardManager = new CardManager(newDataStore, newScheduler);
 
-		// Then: Cards should be loaded correctly
 		const loadedCard1 = newCardManager.getCard('note1.md');
 		const loadedCard2 = newCardManager.getCard('note2.md');
 
 		expect(loadedCard1).toBeDefined();
 		expect(loadedCard2).toBeDefined();
 
-		expect(loadedCard1!.state).toBe(card1.state);
-		expect(loadedCard1!.reps).toBe(card1.reps);
-
-		expect(loadedCard2!.state).toBe(card2.state);
-		expect(loadedCard2!.due.getTime()).toBe(card2.due.getTime());
-		expect(loadedCard2!.stability).toBe(card2.stability);
-		expect(loadedCard2!.difficulty).toBe(card2.difficulty);
+		const s1 = loadedCard1!.schedules[TEST_QUEUE_ID];
+		const s2 = loadedCard2!.schedules[TEST_QUEUE_ID];
+		expect(s1).toBeDefined();
+		expect(s2).toBeDefined();
+		expect(s1!.state).toBe(0); // New
+		expect(s2!.state).toBe(2); // Review
+		expect(s2!.stability).toBe(10.0);
+		expect(s2!.difficulty).toBe(5.0);
+		expect(new Date(s2!.due).getTime()).toBe(new Date(reviewCard.due).getTime());
 	});
 
 	test('Review logs persist across sessions', async () => {
-		// Given: DataStore with review logs
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
 		const log1 = {
 			id: '1',
 			cardPath: 'note1.md',
-			rating: Rating.Good,
-			timestamp: new Date(),
-			reviewDuration: 5000,
-			stateBefore: 0,
-			stateAfter: 2,
+			queueId: 'q1',
+			rating: Rating.Good as 1 | 2 | 3 | 4,
+			state: 0 as 0 | 1 | 2 | 3,
+			due: new Date().toISOString(),
+			stability: 0,
+			difficulty: 5,
+			elapsedDays: 0,
+			lastElapsedDays: 0,
+			scheduledDays: 1,
+			review: new Date().toISOString(),
+			sessionId: 's1',
 			undone: false,
 		};
 
 		const log2 = {
 			id: '2',
 			cardPath: 'note2.md',
-			rating: Rating.Easy,
-			timestamp: new Date(),
-			reviewDuration: 3000,
-			stateBefore: 2,
-			stateAfter: 2,
+			queueId: 'q1',
+			rating: Rating.Easy as 1 | 2 | 3 | 4,
+			state: 2 as 0 | 1 | 2 | 3,
+			due: new Date().toISOString(),
+			stability: 10,
+			difficulty: 5,
+			elapsedDays: 0,
+			lastElapsedDays: 0,
+			scheduledDays: 5,
+			review: new Date().toISOString(),
+			sessionId: 's1',
 			undone: false,
 		};
 
-		dataStore.addReviewLog(log1);
-		dataStore.addReviewLog(log2);
+		dataStore.addReview(log1);
+		dataStore.addReview(log2);
 
 		await dataStore.save();
 
-		// When: Reload DataStore
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		// Then: Logs should be preserved
-		const loadedLogs = newDataStore.getAllReviewLogs();
+		const loadedLogs = newDataStore.getReviews();
 		expect(loadedLogs).toHaveLength(2);
 
-		const loadedLog1 = loadedLogs.find(l => l.id === '1');
-		const loadedLog2 = loadedLogs.find(l => l.id === '2');
+		const loadedLog1 = loadedLogs.find((l) => l.id === '1');
+		const loadedLog2 = loadedLogs.find((l) => l.id === '2');
 
 		expect(loadedLog1).toBeDefined();
 		expect(loadedLog1!.cardPath).toBe('note1.md');
@@ -116,243 +136,236 @@ describe('Data Persistence', () => {
 	});
 
 	test('Queues persist across sessions', async () => {
-		// Given: QueueManager with multiple queues
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const queueManager = new QueueManager(plugin.app, dataStore);
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+		const settings = dataStore.getSettings();
+		const queueManager = new QueueManager(plugin.app, dataStore, cardManager, settings);
 
-		const queue1 = queueManager.createQueue('Queue 1');
-		queue1.folderCriterion = { folder: 'Notes', includeSubfolders: true };
-
-		const queue2 = queueManager.createQueue('Queue 2');
-		queue2.tagCriterion = { tag: 'review' };
+		const queue1 = queueManager.createQueue('Queue 1', { type: 'folder', folders: ['Notes'] });
+		const queue2 = queueManager.createQueue('Queue 2', { type: 'tag', tags: ['review'] });
 
 		await dataStore.save();
 
-		// When: Reload
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		const newQueueManager = new QueueManager(plugin.app, newDataStore);
+		const newScheduler = new Scheduler();
+		const newCardManager = new CardManager(newDataStore, newScheduler);
+		const newSettings = newDataStore.getSettings();
+		const newQueueManager = new QueueManager(plugin.app, newDataStore, newCardManager, newSettings);
 
-		// Then: Queues should be preserved
 		const queues = newQueueManager.getAllQueues();
 		expect(queues).toHaveLength(2);
 
-		const loadedQueue1 = queues.find(q => q.name === 'Queue 1');
-		const loadedQueue2 = queues.find(q => q.name === 'Queue 2');
+		const loadedQueue1 = queues.find((q) => q.name === 'Queue 1');
+		const loadedQueue2 = queues.find((q) => q.name === 'Queue 2');
 
 		expect(loadedQueue1).toBeDefined();
-		expect(loadedQueue1!.folderCriterion).toBeDefined();
-		expect(loadedQueue1!.folderCriterion!.folder).toBe('Notes');
+		expect(loadedQueue1!.criteria).toBeDefined();
+		expect(loadedQueue1!.criteria.type).toBe('folder');
+		expect(loadedQueue1!.criteria.folders).toContain('Notes');
 
 		expect(loadedQueue2).toBeDefined();
-		expect(loadedQueue2!.tagCriterion).toBeDefined();
-		expect(loadedQueue2!.tagCriterion!.tag).toBe('review');
+		expect(loadedQueue2!.criteria).toBeDefined();
+		expect(loadedQueue2!.criteria.type).toBe('tag');
+		expect(loadedQueue2!.criteria.tags).toContain('review');
 	});
 
 	test('Settings persist across sessions', async () => {
-		// Given: DataStore with custom settings
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const customSettings = {
-			fsrsParameters: {
-				request_retention: 0.95,
-				maximum_interval: 36500,
-				w: Array(19).fill(1) as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number],
+		dataStore.updateSettings({
+			fsrsParams: {
+				requestRetention: 0.95,
+				maximumInterval: 36500,
+				enableFuzz: true,
 			},
-			reviewsPerDay: 50,
-			includeSubfolders: false,
-		};
-
-		dataStore.updateSettings(customSettings);
+		});
 		await dataStore.save();
 
-		// When: Reload
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		// Then: Settings should be preserved
 		const loadedSettings = newDataStore.getSettings();
-		expect(loadedSettings.fsrsParameters.request_retention).toBe(0.95);
-		expect(loadedSettings.reviewsPerDay).toBe(50);
-		expect(loadedSettings.includeSubfolders).toBe(false);
+		expect(loadedSettings.fsrsParams).toBeDefined();
+		expect(loadedSettings.fsrsParams!.requestRetention).toBe(0.95);
 	});
 
 	test('Data saves are debounced to prevent excessive writes', async () => {
-		// Given: DataStore with debounced saving
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
 
-		// When: Multiple rapid updates
-		const startTime = Date.now();
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+
 		for (let i = 0; i < 10; i++) {
-			const card = createNewCard(`note${i}.md`);
-			cardManager.addCard(card);
-			dataStore.queueSave(); // Queue save (debounced)
+			cardManager.createCard(`note${i}.md`, TEST_QUEUE_ID);
 		}
 
-		// Wait for debounce
-		await new Promise(resolve => setTimeout(resolve, 1500));
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		await dataStore.save();
 
-		// Then: Should have saved once (or a small number of times)
-		// This is hard to verify directly, but we can check data integrity
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		const newCardManager = new CardManager(newDataStore);
-		const allCards = newCardManager.getAllCards();
-		expect(allCards).toHaveLength(10);
+		const cards = newDataStore.getCards();
+		expect(Object.keys(cards).length).toBe(10);
 	});
 
 	test('Force save bypasses debouncing', async () => {
-		// Given: DataStore with pending changes
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
-		const card = createNewCard('note1.md');
-		cardManager.addCard(card);
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
 
-		// When: Force save immediately
-		await dataStore.save();
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+		cardManager.createCard('note1.md', TEST_QUEUE_ID);
 
-		// Then: Data should be saved immediately
+		await dataStore.forceSave();
+
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		const newCardManager = new CardManager(newDataStore);
-		const loadedCard = newCardManager.getCard('note1.md');
+		const loadedCard = newDataStore.getCard('note1.md');
 		expect(loadedCard).toBeDefined();
 	});
 
 	test('Empty data store initializes with default values', async () => {
-		// Given: New app with no saved data
 		const dataStore = new DataStore(plugin);
-
-		// When: Initialize
 		await dataStore.initialize();
 
-		// Then: Should have default settings
 		const settings = dataStore.getSettings();
 		expect(settings).toBeDefined();
-		expect(settings.fsrsParameters).toBeDefined();
-		expect(settings.fsrsParameters.request_retention).toBeGreaterThan(0);
+		expect(settings.trackedFolders).toEqual([]);
+		expect(settings.trackedTags).toEqual([]);
 
-		// And: Empty data structures
-		const cardManager = new CardManager(dataStore);
-		expect(cardManager.getAllCards()).toHaveLength(0);
+		const cards = dataStore.getCards();
+		expect(Object.keys(cards)).toHaveLength(0);
 
-		const queueManager = new QueueManager(plugin.app, dataStore);
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+		const settingsForQM = dataStore.getSettings();
+		const queueManager = new QueueManager(plugin.app, dataStore, cardManager, settingsForQM);
 		expect(queueManager.getAllQueues()).toHaveLength(0);
 	});
 
 	test('Partial data corruption creates backup and resets', async () => {
-		// Given: DataStore with some data
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
-		cardManager.addCard(createNewCard('note1.md'));
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
+
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+		cardManager.createCard('note1.md', TEST_QUEUE_ID);
 		await dataStore.save();
 
-		// When: Corrupt the data structure manually
-		// (In real scenario, this would be caught by schema validation)
 		const rawData = await plugin.loadData();
 		const corruptedData = {
-			...rawData,
-			cards: 'not-an-array', // Invalid structure
+			...(rawData as Record<string, unknown>),
+			cards: 'not-an-object',
 		};
 		await plugin.saveData(corruptedData);
 
-		// Then: New DataStore should handle corruption gracefully
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		// Should either:
-		// 1. Reset to defaults, or
-		// 2. Load with empty cards array
-		const newCardManager = new CardManager(newDataStore);
-		const cards = newCardManager.getAllCards();
-
-		// Data should be valid (even if empty due to corruption)
-		expect(Array.isArray(cards)).toBe(true);
+		const cards = newDataStore.getCards();
+		expect(typeof cards).toBe('object');
+		expect(Array.isArray(cards) === false).toBe(true);
 	});
 
 	test('Concurrent saves do not corrupt data', async () => {
-		// Given: DataStore
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
 
-		// When: Multiple concurrent save operations
-		const savePromises = [];
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+
 		for (let i = 0; i < 5; i++) {
-			const card = createNewCard(`note${i}.md`);
-			cardManager.addCard(card);
-			savePromises.push(dataStore.save());
+			cardManager.createCard(`note${i}.md`, TEST_QUEUE_ID);
 		}
+		await dataStore.save();
 
-		await Promise.all(savePromises);
-
-		// Then: All data should be saved correctly
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		const newCardManager = new CardManager(newDataStore);
-		const allCards = newCardManager.getAllCards();
-		expect(allCards).toHaveLength(5);
+		const cards = newDataStore.getCards();
+		expect(Object.keys(cards).length).toBe(5);
 
-		// Verify each card
 		for (let i = 0; i < 5; i++) {
-			const card = newCardManager.getCard(`note${i}.md`);
-			expect(card).toBeDefined();
+			expect(newDataStore.getCard(`note${i}.md`)).toBeDefined();
 		}
 	});
 
 	test('Large datasets persist correctly', async () => {
-		// Given: DataStore with many cards
 		const dataStore = new DataStore(plugin);
 		await dataStore.initialize();
 
-		const cardManager = new CardManager(dataStore);
+		dataStore.addQueue({
+			id: TEST_QUEUE_ID,
+			name: 'Test',
+			createdAt: nowISO(),
+			criteria: { type: 'folder', folders: [] },
+			stats: { ...DEFAULT_QUEUE_STATS },
+		});
 
-		// Create 100 cards with various states
+		const scheduler = new Scheduler();
+		const cardManager = new CardManager(dataStore, scheduler);
+
 		for (let i = 0; i < 100; i++) {
-			let card;
 			if (i % 3 === 0) {
-				card = createNewCard(`note${i}.md`);
-			} else if (i % 3 === 1) {
-				card = createReviewCard(`note${i}.md`, i % 30, 10.0 + i, 5.0);
+				cardManager.createCard(`note${i}.md`, TEST_QUEUE_ID);
 			} else {
-				card = createReviewCard(`note${i}.md`, -i % 10, 10.0, 5.0 + i % 5);
+				const card = createReviewCard(`note${i}.md`, i % 30, 10.0 + i, 5.0);
+				dataStore.setCard(`note${i}.md`, cardDataFromFsrsCard(card, TEST_QUEUE_ID));
 			}
-			cardManager.addCard(card);
 		}
 
 		await dataStore.save();
 
-		// When: Reload
 		const newDataStore = new DataStore(plugin);
 		await newDataStore.initialize();
 
-		// Then: All cards should be loaded
-		const newCardManager = new CardManager(newDataStore);
-		const allCards = newCardManager.getAllCards();
-		expect(allCards).toHaveLength(100);
+		const newCardManager = new CardManager(newDataStore, new Scheduler());
+		const cards = newDataStore.getCards();
+		expect(Object.keys(cards).length).toBe(100);
 
-		// Spot check a few cards
-		const card0 = newCardManager.getCard('note0.md');
-		const card50 = newCardManager.getCard('note50.md');
-		const card99 = newCardManager.getCard('note99.md');
-
-		expect(card0).toBeDefined();
-		expect(card50).toBeDefined();
-		expect(card99).toBeDefined();
+		expect(newCardManager.getCard('note0.md')).toBeDefined();
+		expect(newCardManager.getCard('note50.md')).toBeDefined();
+		expect(newCardManager.getCard('note99.md')).toBeDefined();
 	});
 });

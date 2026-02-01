@@ -3,9 +3,56 @@
  *
  * Provides factory functions to create cards in various states
  * (new, learning, review, relearning) with different schedules.
+ * Also provides helpers to build plugin CardData/CardSchedule from ts-fsrs cards.
  */
 
 import { Card, createEmptyCard, State, Rating } from 'ts-fsrs';
+import type { CardData, CardSchedule } from '../../src/types';
+import { generateId } from '../../src/utils/id-generator';
+import { nowISO } from '../../src/utils/date-utils';
+
+/** Queue ID used in tests when a single queue is needed */
+export const TEST_QUEUE_ID = 'test-queue';
+
+/**
+ * Convert a ts-fsrs Card (with notePath) to plugin CardSchedule
+ */
+export function fsrsCardToCardSchedule(
+	card: Card & { notePath?: string },
+	queueId: string
+): CardSchedule {
+	return {
+		due: card.due.toISOString(),
+		stability: card.stability,
+		difficulty: card.difficulty,
+		elapsedDays: card.elapsed_days,
+		scheduledDays: card.scheduled_days,
+		reps: card.reps,
+		lapses: card.lapses,
+		state: card.state as 0 | 1 | 2 | 3,
+		lastReview: card.last_review ? card.last_review.toISOString() : null,
+		addedToQueueAt: nowISO(),
+	};
+}
+
+/**
+ * Build plugin CardData from a ts-fsrs-style card for a given queue
+ */
+export function cardDataFromFsrsCard(
+	card: Card & { notePath: string },
+	queueId: string
+): CardData {
+	const now = nowISO();
+	return {
+		notePath: card.notePath,
+		noteId: generateId(),
+		schedules: {
+			[queueId]: fsrsCardToCardSchedule(card, queueId),
+		},
+		createdAt: now,
+		lastModified: now,
+	};
+}
 
 /**
  * Create a new card (never reviewed)
