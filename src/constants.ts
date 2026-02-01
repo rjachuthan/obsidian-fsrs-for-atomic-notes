@@ -44,7 +44,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	excludedProperties: [],
 
 	// Review
-	queueOrder: "due-overdue-first",
+	queueOrder: "mixed-anki",
+	newCardsPerDay: 20,
+	maxReviewsPerDay: 200,
 	showNoteStats: true,
 	showPredictedIntervals: true,
 	showSessionStats: true,

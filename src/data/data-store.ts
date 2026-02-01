@@ -142,8 +142,30 @@ export class DataStore {
 				: DEFAULT_SETTINGS.excludedProperties,
 			queueOrder: this.validateEnum(
 				s.queueOrder,
-				["due-overdue-first", "due-chronological", "random", "difficulty-desc", "difficulty-asc"],
+				[
+					"mixed-anki",
+					"due-overdue-first",
+					"due-chronological",
+					"state-priority",
+					"retrievability-asc",
+					"load-balancing",
+					"random",
+					"difficulty-desc",
+					"difficulty-asc",
+				],
 				DEFAULT_SETTINGS.queueOrder
+			),
+			newCardsPerDay: this.validateDailyLimit(
+				s.newCardsPerDay,
+				DEFAULT_SETTINGS.newCardsPerDay,
+				1,
+				1000
+			),
+			maxReviewsPerDay: this.validateDailyLimit(
+				s.maxReviewsPerDay,
+				DEFAULT_SETTINGS.maxReviewsPerDay,
+				1,
+				1000
 			),
 			showNoteStats: typeof s.showNoteStats === "boolean" ? s.showNoteStats : DEFAULT_SETTINGS.showNoteStats,
 			showPredictedIntervals:
@@ -225,6 +247,16 @@ export class DataStore {
 			return defaultValue;
 		}
 		return value.filter((item): item is string => typeof item === "string");
+	}
+
+	private validateDailyLimit(
+		value: unknown,
+		defaultValue: number,
+		min: number,
+		max: number
+	): number {
+		const n = typeof value === "number" && Number.isInteger(value) ? value : defaultValue;
+		return Math.max(min, Math.min(max, n));
 	}
 
 	private isValidPropertyMatch(item: unknown): item is PropertyMatch {

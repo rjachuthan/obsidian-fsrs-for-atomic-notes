@@ -283,8 +283,19 @@ export class QueueManager {
 
 		const dueCards = this.cardManager.getDueCards(queueId);
 
-		// Sort based on strategy
+		// Sort (and optionally cap) based on strategy
 		return this.sortCards(dueCards, queueId, strategy);
+	}
+
+	/**
+	 * Sort by due date (ascending) for use in multiple strategies
+	 */
+	private sortByDue(cards: CardData[], queueId: string): void {
+		cards.sort((a, b) => {
+			const aDue = parseISODate(a.schedules[queueId]!.due);
+			const bDue = parseISODate(b.schedules[queueId]!.due);
+			return aDue.getTime() - bDue.getTime();
+		});
 	}
 
 	/**
@@ -298,6 +309,63 @@ export class QueueManager {
 		const sorted = [...cards];
 
 		switch (strategy) {
+			case "mixed-anki": {
+				const settings = this.dataStore.getSettings();
+				const learning = sorted.filter((c) => {
+					const s = c.schedules[queueId];
+					return s && (s.state === 1 || s.state === 3);
+				});
+				const newCards = sorted.filter((c) => {
+					const s = c.schedules[queueId];
+					return s && s.state === 0;
+				});
+				const review = sorted.filter((c) => {
+					const s = c.schedules[queueId];
+					return s && s.state === 2;
+				});
+				this.sortByDue(learning, queueId);
+				this.sortByDue(newCards, queueId);
+				this.sortByDue(review, queueId);
+				const selectedNew = newCards.slice(0, settings.newCardsPerDay);
+				const selectedReview = review.slice(0, settings.maxReviewsPerDay);
+				return [...learning, ...selectedNew, ...selectedReview];
+			}
+
+			case "state-priority": {
+				// Learning(1) > Relearning(3) > Review(2) > New(0), then by due
+				const statePriority: Record<number, number> = {
+					1: 1,
+					3: 2,
+					2: 3,
+					0: 4,
+				};
+				sorted.sort((a, b) => {
+					const pa = statePriority[a.schedules[queueId]!.state] ?? 5;
+					const pb = statePriority[b.schedules[queueId]!.state] ?? 5;
+					if (pa !== pb) return pa - pb;
+					return (
+						parseISODate(a.schedules[queueId]!.due).getTime() -
+						parseISODate(b.schedules[queueId]!.due).getTime()
+					);
+				});
+				break;
+			}
+
+			case "retrievability-asc": {
+				const withR = sorted.map((card) => ({
+					card,
+					r: this.cardManager.getRetrievability(card.notePath, queueId) ?? 1,
+				}));
+				withR.sort((a, b) => a.r - b.r);
+				return withR.map((x) => x.card);
+			}
+
+			case "load-balancing": {
+				const settings = this.dataStore.getSettings();
+				this.sortByDue(sorted, queueId);
+				return sorted.slice(0, settings.maxReviewsPerDay);
+			}
+
 			case "due-overdue-first":
 				// Sort by due date, overdue first
 				sorted.sort((a, b) => {
@@ -308,12 +376,7 @@ export class QueueManager {
 				break;
 
 			case "due-chronological":
-				// Strict chronological order
-				sorted.sort((a, b) => {
-					const aDue = parseISODate(a.schedules[queueId]!.due);
-					const bDue = parseISODate(b.schedules[queueId]!.due);
-					return aDue.getTime() - bDue.getTime();
-				});
+				this.sortByDue(sorted, queueId);
 				break;
 
 			case "difficulty-desc":

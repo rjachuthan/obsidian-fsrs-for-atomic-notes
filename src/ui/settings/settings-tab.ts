@@ -109,14 +109,49 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc("How to order notes during review")
 			.addDropdown((dropdown) =>
 				dropdown
+					.addOption("mixed-anki", "Anki-style (mixed)")
 					.addOption("due-overdue-first", "Due date (overdue first)")
 					.addOption("due-chronological", "Due date (chronological)")
+					.addOption("state-priority", "State priority")
+					.addOption("retrievability-asc", "Retrievability (hard first)")
+					.addOption("load-balancing", "Load balancing")
 					.addOption("difficulty-desc", "Difficulty (hard first)")
 					.addOption("difficulty-asc", "Difficulty (easy first)")
 					.addOption("random", "Random")
 					.setValue(settings.queueOrder)
 					.onChange(async (value) => {
 						await this.updateSetting("queueOrder", value as QueueOrderStrategy);
+					})
+			);
+
+		// Daily limits (used by mixed-anki and load-balancing)
+		new Setting(containerEl)
+			.setName("New cards per day")
+			.setDesc("Max new cards per day (used by Anki-style and load-balancing strategies)")
+			.addText((text) =>
+				text
+					.setPlaceholder("20")
+					.setValue(String(settings.newCardsPerDay))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (!Number.isNaN(n) && n >= 1 && n <= 1000) {
+							await this.updateSetting("newCardsPerDay", n);
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Max reviews per day")
+			.setDesc("Max review cards per day (used by Anki-style and load-balancing strategies)")
+			.addText((text) =>
+				text
+					.setPlaceholder("200")
+					.setValue(String(settings.maxReviewsPerDay))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (!Number.isNaN(n) && n >= 1 && n <= 1000) {
+							await this.updateSetting("maxReviewsPerDay", n);
+						}
 					})
 			);
 

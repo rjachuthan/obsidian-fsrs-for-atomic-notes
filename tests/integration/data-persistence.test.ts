@@ -257,6 +257,9 @@ describe('Data Persistence', () => {
 		expect(settings).toBeDefined();
 		expect(settings.trackedFolders).toEqual([]);
 		expect(settings.trackedTags).toEqual([]);
+		expect(settings.queueOrder).toBe("mixed-anki");
+		expect(settings.newCardsPerDay).toBe(20);
+		expect(settings.maxReviewsPerDay).toBe(200);
 
 		const cards = dataStore.getCards();
 		expect(Object.keys(cards)).toHaveLength(0);

@@ -54,6 +54,10 @@ export interface PluginSettings {
 	// Review
 	/** How to order review queue */
 	queueOrder: QueueOrderStrategy;
+	/** New cards per day (used by mixed-anki) */
+	newCardsPerDay: number;
+	/** Max reviews per day (used by mixed-anki and load-balancing) */
+	maxReviewsPerDay: number;
 	/** Show stats in sidebar */
 	showNoteStats: boolean;
 	/** Show interval predictions */
@@ -72,8 +76,12 @@ export interface PluginSettings {
 export type SelectionMode = "folder" | "tag";
 export type SidebarPosition = "left" | "right";
 export type QueueOrderStrategy =
+	| "mixed-anki"
 	| "due-overdue-first"
 	| "due-chronological"
+	| "state-priority"
+	| "retrievability-asc"
+	| "load-balancing"
 	| "random"
 	| "difficulty-desc"
 	| "difficulty-asc";
