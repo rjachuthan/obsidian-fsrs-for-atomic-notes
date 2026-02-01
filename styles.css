@@ -105,12 +105,19 @@
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-4-2);
+	width: 100%;
 }
 
 .fsrs-rating-button {
 	display: flex;
-	flex-direction: column;
+	flex-direction: row;
+	flex-wrap: nowrap;
 	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-1);
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
@@ -132,10 +139,14 @@
 	font-size: var(--font-ui-medium);
 }
 
+.fsrs-rating-sep {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 .fsrs-rating-interval {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-	margin-top: var(--size-4-1);
 }
 
 /* Rating button colors */

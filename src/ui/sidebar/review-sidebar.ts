@@ -219,8 +219,13 @@ export class ReviewSidebar extends ItemView {
 			labelSpan.textContent = RATING_LABELS[rating];
 
 			if (settings.showPredictedIntervals && preview) {
-				const intervalSpan = btn.createSpan({ cls: "fsrs-rating-interval" });
-				intervalSpan.textContent = preview[rating]?.intervalText ?? "";
+				const intervalText = preview[rating]?.intervalText ?? "";
+				if (intervalText) {
+					const sep = btn.createSpan({ cls: "fsrs-rating-sep" });
+					sep.textContent = " · ";
+					const intervalSpan = btn.createSpan({ cls: "fsrs-rating-interval" });
+					intervalSpan.textContent = intervalText;
+				}
 			}
 
 			btn.addEventListener("click", () => {
