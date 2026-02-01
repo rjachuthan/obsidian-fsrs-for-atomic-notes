@@ -103,8 +103,13 @@ export default class FSRSPlugin extends Plugin {
 			)
 		);
 
-		// Register all commands
-		registerCommands(this, this.sessionManager, this.queueManager);
+		// Register all commands (start-review shows queue selector when multiple queues)
+		registerCommands(this, this.sessionManager, this.queueManager, {
+			onStartReview: async (queueId: string) => {
+				await this.sessionManager.startSession(queueId);
+				await this.activateSidebar();
+			},
+		});
 		this.registerAdditionalCommands();
 
 		// Add ribbon icons
@@ -179,8 +184,6 @@ export default class FSRSPlugin extends Plugin {
 			},
 		});
 
-		// Override start-review to show queue selector if multiple queues
-		// Note: The original command is still registered, this is an enhancement
 	}
 
 	/**

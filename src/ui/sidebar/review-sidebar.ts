@@ -8,6 +8,7 @@ import type { SessionManager } from "../../review/session-manager";
 import type { QueueManager } from "../../queues/queue-manager";
 import type { DataStore } from "../../data/data-store";
 import type { SessionState, RatingValue } from "../../types";
+import { QueueSelectorModal } from "../queues/queue-selector-modal";
 import {
 	REVIEW_SIDEBAR_VIEW_TYPE,
 	REVIEW_SIDEBAR_DISPLAY_NAME,
@@ -98,8 +99,10 @@ export class ReviewSidebar extends ItemView {
 	private renderIdleState(container: HTMLElement): void {
 		const idleContainer = container.createDiv({ cls: "fsrs-idle-container" });
 
-		// Queue info
-		const queueStats = this.queueManager.getQueueStats(DEFAULT_QUEUE_ID);
+		// Queue info (default queue or first queue for stats summary)
+		const queues = this.queueManager.getAllQueues();
+		const defaultOrFirstId = queues.length > 0 ? queues[0]?.id ?? DEFAULT_QUEUE_ID : DEFAULT_QUEUE_ID;
+		const queueStats = this.queueManager.getQueueStats(defaultOrFirstId);
 
 		idleContainer.createEl("div", {
 			cls: "fsrs-idle-message",
@@ -113,20 +116,46 @@ export class ReviewSidebar extends ItemView {
 		this.createStatItem(statsDiv, "New", String(queueStats.newNotes));
 		this.createStatItem(statsDiv, "Total", String(queueStats.totalNotes));
 
-		// Start button
+		// Start button (shows queue selector when multiple queues)
 		const startBtn = idleContainer.createEl("button", {
 			cls: "fsrs-start-button mod-cta",
 			text: "Start review",
 		});
 
 		startBtn.addEventListener("click", () => {
-			void this.sessionManager.startSession(DEFAULT_QUEUE_ID);
+			this.handleStartReview();
 		});
 
-		// Disable if no due notes
-		if (queueStats.dueNotes === 0) {
+		// Disable if no notes due in any queue
+		const totalDue = queues.length === 0
+			? queueStats.dueNotes
+			: queues.reduce((sum, q) => sum + this.queueManager.getQueueStats(q.id).dueNotes, 0);
+		if (totalDue === 0) {
 			startBtn.disabled = true;
 			startBtn.addClass("fsrs-button-disabled");
+		}
+	}
+
+	/**
+	 * Start review: show queue selector when multiple queues, otherwise start with default/first queue
+	 */
+	private handleStartReview(): void {
+		const queues = this.queueManager.getAllQueues();
+		if (queues.length === 0) {
+			this.queueManager.getDefaultQueue();
+			const again = this.queueManager.getAllQueues();
+			if (again.length === 0) return;
+		}
+		const allQueues = this.queueManager.getAllQueues();
+		if (allQueues.length > 1) {
+			const modal = new QueueSelectorModal(this.app, this.queueManager, (queueId) => {
+				void this.sessionManager.startSession(queueId);
+				modal.close();
+			});
+			modal.open();
+		} else {
+			const queueId = allQueues[0]?.id ?? DEFAULT_QUEUE_ID;
+			void this.sessionManager.startSession(queueId);
 		}
 	}
 
