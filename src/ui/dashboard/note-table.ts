@@ -46,6 +46,7 @@ export function renderNoteTable(
 		attr: {
 			type: "text",
 			placeholder: "Filter notes...",
+			"aria-label": "Filter notes by title or path",
 		},
 	});
 
@@ -218,6 +219,7 @@ export function renderNoteTable(
 		const prevBtn = controls.createEl("button", {
 			cls: "fsrs-pagination-btn",
 			text: "←",
+			attr: { "aria-label": "Previous page" },
 		});
 		prevBtn.disabled = state.page === 0;
 		prevBtn.addEventListener("click", () => {
@@ -237,6 +239,7 @@ export function renderNoteTable(
 		const nextBtn = controls.createEl("button", {
 			cls: "fsrs-pagination-btn",
 			text: "→",
+			attr: { "aria-label": "Next page" },
 		});
 		nextBtn.disabled = state.page >= totalPages - 1;
 		nextBtn.addEventListener("click", () => {

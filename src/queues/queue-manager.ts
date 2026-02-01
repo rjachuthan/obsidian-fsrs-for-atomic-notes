@@ -18,7 +18,12 @@ import type { CardManager } from "../fsrs/card-manager";
 import { NoteResolver } from "./note-resolver";
 import { generateId } from "../utils/id-generator";
 import { nowISO, parseISODate, isDue, getStartOfToday } from "../utils/date-utils";
-import { DEFAULT_QUEUE_NAME, DEFAULT_QUEUE_ID, DEFAULT_QUEUE_STATS } from "../constants";
+import {
+	DEFAULT_QUEUE_NAME,
+	DEFAULT_QUEUE_ID,
+	DEFAULT_QUEUE_STATS,
+	STATS_CACHE_TTL_MS,
+} from "../constants";
 
 /**
  * QueueManager handles queue operations and synchronization
@@ -260,14 +265,19 @@ export class QueueManager {
 	}
 
 	/**
-	 * Get queue statistics
+	 * Get queue statistics (cached for STATS_CACHE_TTL_MS to avoid recomputing on every render)
 	 */
 	getQueueStats(queueId: string): QueueStats {
 		const queue = this.dataStore.getQueue(queueId);
 		if (!queue) {
 			return { ...DEFAULT_QUEUE_STATS };
 		}
-		return queue.stats;
+		const stats = queue.stats;
+		const lastUpdatedMs = parseISODate(stats.lastUpdated).getTime();
+		if (Date.now() - lastUpdatedMs < STATS_CACHE_TTL_MS) {
+			return stats;
+		}
+		return this.updateQueueStats(queueId);
 	}
 
 	// ============================================================================

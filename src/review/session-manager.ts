@@ -15,6 +15,7 @@ import type { CardManager } from "../fsrs/card-manager";
 import type { QueueManager } from "../queues/queue-manager";
 import type { Scheduler } from "../fsrs/scheduler";
 import { generateSessionId } from "../utils/id-generator";
+import { handleError } from "../utils/error-handler";
 import { NOTICE_DURATION_MS } from "../constants";
 
 /** Callback type for session state changes */
@@ -92,6 +93,15 @@ export class SessionManager {
 	 * Start a new review session for a queue
 	 */
 	async startSession(queueId: string): Promise<boolean> {
+		try {
+			return await this.doStartSession(queueId);
+		} catch (error) {
+			handleError(error, { component: "SessionManager.startSession", notifyUser: true });
+			return false;
+		}
+	}
+
+	private async doStartSession(queueId: string): Promise<boolean> {
 		// Check if session is already active
 		if (this.session) {
 			new Notice("A review session is already active. End it first.", NOTICE_DURATION_MS);
@@ -166,6 +176,15 @@ export class SessionManager {
 	 * Rate the current note
 	 */
 	async rate(rating: RatingValue): Promise<boolean> {
+		try {
+			return await this.doRate(rating);
+		} catch (error) {
+			handleError(error, { component: "SessionManager.rate", notifyUser: true });
+			return false;
+		}
+	}
+
+	private async doRate(rating: RatingValue): Promise<boolean> {
 		if (!this.session) {
 			new Notice("No active review session.", NOTICE_DURATION_MS);
 			return false;

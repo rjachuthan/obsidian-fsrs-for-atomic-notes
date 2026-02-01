@@ -18,6 +18,7 @@ import {
 	DEFAULT_QUEUE_ID,
 	CARD_STATE_LABELS,
 } from "../../constants";
+import { Platform } from "../../utils/platform";
 
 /**
  * ReviewSidebar is the main review interface in the sidebar
@@ -83,6 +84,9 @@ export class ReviewSidebar extends ItemView {
 		const container = this.contentEl;
 		container.empty();
 		container.addClass("fsrs-sidebar");
+		if (Platform.isMobile()) {
+			container.addClass("fsrs-mobile");
+		}
 
 		const state = this.sessionManager.getState();
 
@@ -120,6 +124,7 @@ export class ReviewSidebar extends ItemView {
 		const startBtn = idleContainer.createEl("button", {
 			cls: "fsrs-start-button mod-cta",
 			text: "Start review",
+			attr: { "aria-label": "Start review session" },
 		});
 
 		startBtn.addEventListener("click", () => {
@@ -240,12 +245,14 @@ export class ReviewSidebar extends ItemView {
 		const ratings: RatingValue[] = [RATINGS.AGAIN, RATINGS.HARD, RATINGS.GOOD, RATINGS.EASY];
 
 		for (const rating of ratings) {
+			const label = RATING_LABELS[rating];
 			const btn = buttonsContainer.createEl("button", {
 				cls: `fsrs-rating-button ${RATING_COLORS[rating]}`,
+				attr: { "aria-label": `Rate: ${label}` },
 			});
 
 			const labelSpan = btn.createSpan({ cls: "fsrs-rating-label" });
-			labelSpan.textContent = RATING_LABELS[rating];
+			labelSpan.textContent = label;
 
 			if (settings.showPredictedIntervals && preview) {
 				const intervalText = preview[rating]?.intervalText ?? "";
@@ -277,6 +284,7 @@ export class ReviewSidebar extends ItemView {
 		const bringBackBtn = promptContainer.createEl("button", {
 			cls: "fsrs-bring-back-button mod-cta",
 			text: "Bring back note",
+			attr: { "aria-label": "Bring back current review note" },
 		});
 
 		bringBackBtn.addEventListener("click", () => {
@@ -298,6 +306,7 @@ export class ReviewSidebar extends ItemView {
 		const skipBtn = controlsContainer.createEl("button", {
 			cls: "fsrs-nav-button",
 			text: "Skip",
+			attr: { "aria-label": "Skip current note" },
 		});
 		skipBtn.addEventListener("click", () => {
 			void this.sessionManager.skip();
@@ -310,6 +319,7 @@ export class ReviewSidebar extends ItemView {
 		const backBtn = controlsContainer.createEl("button", {
 			cls: "fsrs-nav-button",
 			text: "Back",
+			attr: { "aria-label": "Go to previous note" },
 		});
 		backBtn.addEventListener("click", () => {
 			void this.sessionManager.goBack();
@@ -322,6 +332,7 @@ export class ReviewSidebar extends ItemView {
 		const undoBtn = controlsContainer.createEl("button", {
 			cls: "fsrs-nav-button",
 			text: "Undo",
+			attr: { "aria-label": "Undo last rating" },
 		});
 		undoBtn.addEventListener("click", () => {
 			void this.sessionManager.undoLastRating();
@@ -393,6 +404,7 @@ export class ReviewSidebar extends ItemView {
 		const endBtn = endSection.createEl("button", {
 			cls: "fsrs-end-button",
 			text: "End session",
+			attr: { "aria-label": "End review session" },
 		});
 
 		endBtn.addEventListener("click", () => {

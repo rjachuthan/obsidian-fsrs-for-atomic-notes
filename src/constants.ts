@@ -67,6 +67,9 @@ export const DEFAULT_QUEUE_STATS: QueueStats = {
 	lastUpdated: new Date().toISOString(),
 };
 
+/** Maximum number of backups to keep for recovery */
+export const MAX_BACKUPS = 5;
+
 /** Default plugin data (fresh installation) */
 export const DEFAULT_PLUGIN_DATA: PluginData = {
 	version: CURRENT_SCHEMA_VERSION,
@@ -75,6 +78,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
 	cards: {},
 	reviews: [],
 	orphans: [],
+	backups: [],
 };
 
 // ============================================================================

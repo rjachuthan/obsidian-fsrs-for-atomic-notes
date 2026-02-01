@@ -24,6 +24,7 @@ import {
 	COMMAND_NAMES,
 	NOTICE_DURATION_MS,
 } from "./constants";
+import { handleError } from "./utils/error-handler";
 
 /** Interval for periodic orphan detection (5 minutes) */
 const ORPHAN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
@@ -41,9 +42,14 @@ export default class FSRSPlugin extends Plugin {
 	private orphanDetector!: OrphanDetector;
 
 	async onload(): Promise<void> {
-		// Initialize data store
-		this.dataStore = new DataStore(this);
-		await this.dataStore.initialize();
+		try {
+			// Initialize data store
+			this.dataStore = new DataStore(this);
+			await this.dataStore.initialize();
+		} catch (error) {
+			handleError(error, { component: "DataStore.initialize", notifyUser: true });
+			return;
+		}
 
 		// Initialize FSRS scheduler
 		const settings = this.dataStore.getSettings();
@@ -123,11 +129,14 @@ export default class FSRSPlugin extends Plugin {
 
 		// Sync default queue on startup
 		this.app.workspace.onLayoutReady(() => {
-			void Promise.resolve().then(() => {
-				this.queueManager.syncDefaultQueue();
-				// Initial orphan detection
-				this.orphanDetector.detectOrphans();
-			});
+			void Promise.resolve()
+				.then(() => {
+					this.queueManager.syncDefaultQueue();
+					this.orphanDetector.detectOrphans();
+				})
+				.catch((error) => {
+					handleError(error, { component: "startup sync", notifyUser: true });
+				});
 		});
 
 		// Register periodic orphan check

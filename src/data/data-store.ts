@@ -11,6 +11,7 @@ import type {
 	CardData,
 	ReviewLog,
 	OrphanRecord,
+	BackupEntry,
 	DeepPartial,
 	PropertyMatch,
 } from "../types";
@@ -20,6 +21,7 @@ import {
 	DEFAULT_SETTINGS,
 	SAVE_DEBOUNCE_MS,
 	MIN_SAVE_INTERVAL_MS,
+	MAX_BACKUPS,
 } from "../constants";
 import { nowISO } from "../utils/date-utils";
 
@@ -95,9 +97,32 @@ export class DataStore {
 			cards: this.validateCards(migratedData.cards),
 			reviews: this.validateReviews(migratedData.reviews),
 			orphans: this.validateOrphans(migratedData.orphans),
+			backups: this.validateBackups(migratedData.backups),
 		};
 
 		return validatedData;
+	}
+
+	/**
+	 * Validate backups array (keep last MAX_BACKUPS valid entries)
+	 */
+	private validateBackups(backups: unknown): BackupEntry[] {
+		if (!Array.isArray(backups)) {
+			return [];
+		}
+		const valid: BackupEntry[] = [];
+		for (const b of backups) {
+			if (
+				b &&
+				typeof b === "object" &&
+				typeof (b as Record<string, unknown>).id === "string" &&
+				typeof (b as Record<string, unknown>).timestamp === "number" &&
+				(b as Record<string, unknown>).data !== undefined
+			) {
+				valid.push(b as BackupEntry);
+			}
+		}
+		return valid.slice(-MAX_BACKUPS);
 	}
 
 	/**
@@ -314,15 +339,87 @@ export class DataStore {
 	}
 
 	/**
-	 * Create a backup of corrupted data
+	 * Create a backup of corrupted data (on load failure)
 	 */
 	private async createBackup(data: unknown): Promise<void> {
 		try {
-			const backupKey = `backup-${Date.now()}`;
-			console.warn(`[FSRS] Creating backup of corrupted data: ${backupKey}`, JSON.stringify(data));
+			const id = `backup-corrupt-${Date.now()}`;
+			const entry: BackupEntry = {
+				id,
+				timestamp: Date.now(),
+				data: data && typeof data === "object" ? { ...(data as Omit<PluginData, "backups">) } : DEFAULT_PLUGIN_DATA,
+			};
+			if (!this.data.backups) {
+				this.data.backups = [];
+			}
+			this.data.backups.push(entry);
+			this.data.backups = this.data.backups.slice(-MAX_BACKUPS);
+			this.dirty = true;
+			await this.plugin.saveData(this.data);
+			console.warn("[FSRS] Created backup of corrupted data:", id);
 		} catch (error) {
 			console.error("[FSRS] Failed to create backup:", error);
 		}
+	}
+
+	/**
+	 * Create a backup of current data before a save (call before risky writes)
+	 */
+	createBackupBeforeSave(): void {
+		const snapshot = this.getSnapshot();
+		const dataWithoutBackups: Omit<PluginData, "backups"> = {
+			version: snapshot.version,
+			settings: snapshot.settings,
+			queues: snapshot.queues,
+			cards: snapshot.cards,
+			reviews: snapshot.reviews,
+			orphans: snapshot.orphans,
+		};
+		const entry: BackupEntry = {
+			id: `backup-${Date.now()}`,
+			timestamp: Date.now(),
+			data: dataWithoutBackups,
+		};
+		if (!this.data.backups) {
+			this.data.backups = [];
+		}
+		this.data.backups.push(entry);
+		this.data.backups = this.data.backups.slice(-MAX_BACKUPS);
+	}
+
+	/**
+	 * List available backups (newest first)
+	 */
+	listBackups(): BackupEntry[] {
+		const list = this.data.backups ?? [];
+		return [...list].reverse();
+	}
+
+	/**
+	 * Restore from a backup by ID (replaces current data in memory; call save() to persist)
+	 */
+	restoreFromBackup(backupId: string): boolean {
+		const entry = this.data.backups?.find((b) => b.id === backupId);
+		if (!entry) {
+			return false;
+		}
+		this.data = {
+			...entry.data,
+			backups: this.data.backups,
+		};
+		this.dirty = true;
+		return true;
+	}
+
+	/**
+	 * Remove old backups (keep last MAX_BACKUPS)
+	 */
+	cleanupOldBackups(): void {
+		if (!this.data.backups || this.data.backups.length <= MAX_BACKUPS) {
+			return;
+		}
+		this.data.backups = this.data.backups.slice(-MAX_BACKUPS);
+		this.markDirty();
 	}
 
 	// ============================================================================
@@ -593,8 +690,12 @@ export class DataStore {
 		}, delay);
 	}
 
+	/** Save retry configuration */
+	private static readonly SAVE_MAX_RETRIES = 3;
+	private static readonly SAVE_INITIAL_BACKOFF_MS = 100;
+
 	/**
-	 * Save data immediately
+	 * Save data immediately (with backup before write and retry with exponential backoff)
 	 */
 	async save(): Promise<void> {
 		if (!this.dirty) {
@@ -607,14 +708,26 @@ export class DataStore {
 			this.saveTimeout = null;
 		}
 
-		try {
-			await this.plugin.saveData(this.data);
-			this.dirty = false;
-			this.lastSaveTime = Date.now();
-		} catch (error) {
-			console.error("[FSRS] Failed to save data:", error);
-			throw error;
+		this.createBackupBeforeSave();
+
+		let lastError: Error | null = null;
+		for (let attempt = 0; attempt < DataStore.SAVE_MAX_RETRIES; attempt++) {
+			try {
+				await this.plugin.saveData(this.data);
+				this.dirty = false;
+				this.lastSaveTime = Date.now();
+				return;
+			} catch (error) {
+				lastError = error instanceof Error ? error : new Error(String(error));
+				console.error(`[FSRS] Save attempt ${attempt + 1}/${DataStore.SAVE_MAX_RETRIES} failed:`, lastError);
+				if (attempt < DataStore.SAVE_MAX_RETRIES - 1) {
+					const backoff = DataStore.SAVE_INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+					await new Promise((r) => setTimeout(r, backoff));
+				}
+			}
 		}
+		console.error("[FSRS] All save retries failed");
+		throw lastError ?? new Error("Failed to save data");
 	}
 
 	/**

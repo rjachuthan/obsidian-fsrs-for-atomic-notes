@@ -14,6 +14,18 @@ export type { Card, FSRSParameters, ReviewLog as FSRSReviewLogType } from "ts-fs
 // ============================================================================
 
 /**
+ * Backup entry for recovery (stored in PluginData.backups)
+ */
+export interface BackupEntry {
+	/** Unique backup ID */
+	id: string;
+	/** Timestamp when backup was created */
+	timestamp: number;
+	/** Full plugin data snapshot (without backups array to avoid recursion) */
+	data: Omit<PluginData, "backups">;
+}
+
+/**
  * Root data structure persisted in data.json
  */
 export interface PluginData {
@@ -29,6 +41,8 @@ export interface PluginData {
 	reviews: ReviewLog[];
 	/** Deleted/moved notes pending resolution */
 	orphans: OrphanRecord[];
+	/** Last N backups for recovery (optional, managed by BackupManager) */
+	backups?: BackupEntry[];
 }
 
 /**
