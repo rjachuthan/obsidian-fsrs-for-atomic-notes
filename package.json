@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-fsrs-atomic",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Spaced repetition for atomic notes using the FSRS algorithm",
 	"main": "main.js",
 	"type": "module",
