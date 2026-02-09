@@ -53,6 +53,13 @@ export class NoteWatcher {
 				this.handleDelete(file);
 			})
 		);
+
+		// Handle metadata changes (tag edits, frontmatter updates)
+		plugin.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				this.handleMetadataChange(file);
+			})
+		);
 	}
 
 	/**
@@ -78,6 +85,33 @@ export class NoteWatcher {
 				if (!this.cardManager.getCard(file.path)) {
 					this.cardManager.createCard(file.path, queue.id);
 				}
+			}
+		}
+	}
+
+	/**
+	 * Handle metadata change event (tag edits, frontmatter updates)
+	 * Re-evaluates queue membership for the changed note
+	 */
+	private handleMetadataChange(file: TFile): void {
+		if (!file.path.endsWith(".md")) {
+			return;
+		}
+
+		const queues = this.queueManager.getAllQueues();
+		const noteResolver = this.queueManager.getNoteResolver();
+		const card = this.cardManager.getCard(file.path);
+
+		for (const queue of queues) {
+			const matches = noteResolver.matchesNoteCriteria(file, queue.criteria);
+			const hasSchedule = card?.schedules[queue.id] !== undefined;
+
+			if (matches && !hasSchedule) {
+				// Note now matches this queue — add it
+				this.cardManager.createCard(file.path, queue.id);
+			} else if (!matches && hasSchedule) {
+				// Note no longer matches — remove from queue
+				this.cardManager.removeFromQueue(file.path, queue.id);
 			}
 		}
 	}

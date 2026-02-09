@@ -178,11 +178,10 @@ export class QueueManager {
 			}
 		}
 
-		// Find removed notes
+		// Remove notes that no longer match criteria
 		for (const path of currentPaths) {
 			if (!matchingPaths.has(path)) {
-				// Note no longer matches - mark for removal
-				// For now, just track it; don't auto-remove to prevent data loss
+				this.cardManager.removeFromQueue(path, queueId);
 				result.removed.push(path);
 			}
 		}
