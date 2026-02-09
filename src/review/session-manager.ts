@@ -108,6 +108,9 @@ export class SessionManager {
 			return false;
 		}
 
+		// Sync queue with vault to pick up any new/removed notes
+		this.queueManager.syncQueue(queueId);
+
 		// Get due notes for the queue
 		const dueCards = this.queueManager.getDueNotes(queueId);
 
