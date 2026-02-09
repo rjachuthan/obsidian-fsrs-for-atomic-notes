@@ -666,7 +666,9 @@ export class DataStore {
 		// Move to new key
 		this.data.cards[newPath] = card;
 		delete this.data.cards[oldPath];
-		this.markDirty();
+
+		// Migrate review logs to new path
+		this.migrateReviewLogPaths(oldPath, newPath);
 	}
 
 	// ============================================================================
@@ -713,6 +715,23 @@ export class DataStore {
 		const review = this.data.reviews.find((r) => r.id === reviewId);
 		if (review) {
 			review.undone = true;
+			this.markDirty();
+		}
+	}
+
+	/**
+	 * Migrate review log cardPath entries from old path to new path.
+	 * Used when relinking orphaned cards to preserve review history continuity.
+	 */
+	migrateReviewLogPaths(oldPath: string, newPath: string): void {
+		let migrated = 0;
+		for (const review of this.data.reviews) {
+			if (review.cardPath === oldPath) {
+				review.cardPath = newPath;
+				migrated++;
+			}
+		}
+		if (migrated > 0) {
 			this.markDirty();
 		}
 	}

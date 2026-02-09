@@ -6,7 +6,7 @@
 import { Modal, App } from "obsidian";
 import type { DataStore } from "../../data/data-store";
 import type { QueueManager } from "../../queues/queue-manager";
-import { DEFAULT_FSRS_PARAMS } from "../../constants";
+import { DEFAULT_FSRS_PARAMS, STATS_CACHE_TTL_MS } from "../../constants";
 
 // Import visualization components
 import {
@@ -34,6 +34,9 @@ export class DashboardModal extends Modal {
 	private dataStore: DataStore;
 	private queueManager: QueueManager;
 	private selectedQueueId: string | undefined = undefined;
+
+	/** Cached analytics results to avoid recomputation on every render */
+	private cachedResults: Map<string, { data: unknown; timestamp: number }> = new Map();
 
 	constructor(
 		app: App,
@@ -125,6 +128,23 @@ export class DashboardModal extends Modal {
 	}
 
 	/**
+	 * Get a cached computation result, recomputing only if stale.
+	 * Cache key includes the data fingerprint so changes are detected.
+	 */
+	private getCached<T>(key: string, fingerprint: string, compute: () => T): T {
+		const fullKey = `${key}:${fingerprint}`;
+		const cached = this.cachedResults.get(fullKey);
+
+		if (cached && Date.now() - cached.timestamp < STATS_CACHE_TTL_MS) {
+			return cached.data as T;
+		}
+
+		const result = compute();
+		this.cachedResults.set(fullKey, { data: result, timestamp: Date.now() });
+		return result;
+	}
+
+	/**
 	 * Render main dashboard content
 	 */
 	private renderDashboard(container: HTMLElement): void {
@@ -137,9 +157,14 @@ export class DashboardModal extends Modal {
 
 		const queueId = this.selectedQueueId;
 
+		// Data fingerprint for cache invalidation
+		const cardCount = Object.keys(cards).length;
+		const reviewCount = reviews.length;
+		const fp = `${queueId ?? "all"}:${cardCount}:${reviewCount}`;
+
 		// Overview Cards Section
 		const overviewSection = container.createDiv({ cls: "fsrs-dashboard-section fsrs-dashboard-overview" });
-		const overviewStats = calculateOverviewStats(cards, queueId);
+		const overviewStats = this.getCached("overview", fp, () => calculateOverviewStats(cards, queueId));
 		renderOverviewCards(overviewSection, overviewStats);
 
 		// Two-column layout for charts
@@ -150,12 +175,12 @@ export class DashboardModal extends Modal {
 
 		// Heatmap
 		const heatmapSection = leftCol.createDiv({ cls: "fsrs-dashboard-section" });
-		const heatmapData = generateHeatmapData(reviews, 12);
+		const heatmapData = this.getCached("heatmap", fp, () => generateHeatmapData(reviews, 12));
 		renderCalendarHeatmap(heatmapSection, heatmapData);
 
 		// Streaks
 		const streakSection = leftCol.createDiv({ cls: "fsrs-dashboard-section" });
-		const streakData = calculateStreaks(reviews);
+		const streakData = this.getCached("streaks", fp, () => calculateStreaks(reviews));
 		renderStreakTracker(streakSection, streakData);
 
 		// Right column: Retention + Distributions
@@ -163,25 +188,25 @@ export class DashboardModal extends Modal {
 
 		// Retention
 		const retentionSection = rightCol.createDiv({ cls: "fsrs-dashboard-section" });
-		const retentionStats = calculateRetentionStats(reviews, targetRetention, cards, queueId);
+		const retentionStats = this.getCached("retention", fp, () => calculateRetentionStats(reviews, targetRetention, cards, queueId));
 		renderRetentionStats(retentionSection, retentionStats);
 
 		// State Distribution
 		const stateSection = rightCol.createDiv({ cls: "fsrs-dashboard-section" });
-		const stateData = calculateStateDistribution(cards, queueId);
+		const stateData = this.getCached("state", fp, () => calculateStateDistribution(cards, queueId));
 		renderStateDistribution(stateSection, stateData);
 
 		// Difficulty Distribution
 		const difficultySection = rightCol.createDiv({ cls: "fsrs-dashboard-section" });
-		const difficultyData = calculateDifficultyDistribution(cards, queueId);
+		const difficultyData = this.getCached("difficulty", fp, () => calculateDifficultyDistribution(cards, queueId));
 		renderDifficultyDistribution(difficultySection, difficultyData);
 
 		// Forecast Chart (full width)
 		const forecastSection = container.createDiv({ cls: "fsrs-dashboard-section fsrs-dashboard-full-width" });
-		const forecastData = generateForecast(cards, 30, queueId);
+		const forecastData = this.getCached("forecast", fp, () => generateForecast(cards, 30, queueId));
 		renderForecastChart(forecastSection, forecastData);
 
-		// Notes Table (full width)
+		// Notes Table (full width — not cached since it's cheap and user may want fresh sort)
 		const tableSection = container.createDiv({ cls: "fsrs-dashboard-section fsrs-dashboard-full-width" });
 		const tableData = generateCardTableData(cards, queueId);
 		renderNoteTable(tableSection, tableData, this.app);

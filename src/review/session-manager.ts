@@ -238,6 +238,9 @@ export class SessionManager {
 		this.session.reviewed++;
 		this.session.ratings[rating]++;
 
+		// Refresh queue stats immediately so UI shows fresh numbers
+		this.queueManager.updateQueueStats(queueId);
+
 		// Move to next note
 		await this.advanceToNext();
 
