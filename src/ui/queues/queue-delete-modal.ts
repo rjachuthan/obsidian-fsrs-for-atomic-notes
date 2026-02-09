@@ -2,7 +2,7 @@
  * Queue Delete Modal - Confirmation for queue deletion
  */
 
-import { Modal, App, Notice, Setting } from "obsidian";
+import { Modal, App, Notice } from "obsidian";
 import type { QueueManager } from "../../queues/queue-manager";
 import type { Queue } from "../../types";
 import { NOTICE_DURATION_MS } from "../../constants";
@@ -14,8 +14,6 @@ export class QueueDeleteModal extends Modal {
 	private queueManager: QueueManager;
 	private queue: Queue;
 	private onDelete: () => void;
-	private removeCards: boolean = false;
-
 	constructor(
 		app: App,
 		queueManager: QueueManager,
@@ -50,17 +48,7 @@ export class QueueDeleteModal extends Modal {
 		const statsEl = contentEl.createDiv({ cls: "fsrs-delete-stats" });
 		statsEl.createSpan({ text: `This queue contains ${stats.totalNotes} notes with ${stats.dueNotes} due for review.` });
 
-		// Remove cards option
-		new Setting(contentEl)
-			.setName("Remove card data")
-			.setDesc("Also remove scheduling data for cards in this queue. If unchecked, card data is preserved and can be recovered by adding the same notes to another queue.")
-			.addToggle((toggle) =>
-				toggle.setValue(this.removeCards).onChange((value) => {
-					this.removeCards = value;
-				})
-			);
-
-		// Warning for remove cards
+		// Warning
 		const warningEl = contentEl.createDiv({ cls: "fsrs-delete-warning" });
 		warningEl.createSpan({
 			text: "This action cannot be undone.",
@@ -90,7 +78,7 @@ export class QueueDeleteModal extends Modal {
 	 */
 	private confirmDelete(): void {
 		try {
-			this.queueManager.deleteQueue(this.queue.id, this.removeCards);
+			this.queueManager.deleteQueue(this.queue.id);
 			new Notice(`Queue "${this.queue.name}" deleted`, NOTICE_DURATION_MS);
 			this.onDelete();
 			this.close();

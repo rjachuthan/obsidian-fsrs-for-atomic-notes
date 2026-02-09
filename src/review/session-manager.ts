@@ -9,6 +9,7 @@ import type {
 	SessionState,
 	RatingValue,
 	CardSchedule,
+	PersistedSession,
 } from "../types";
 import type { DataStore } from "../data/data-store";
 import type { CardManager } from "../fsrs/card-manager";
@@ -16,7 +17,7 @@ import type { QueueManager } from "../queues/queue-manager";
 import type { Scheduler } from "../fsrs/scheduler";
 import { generateSessionId } from "../utils/id-generator";
 import { handleError } from "../utils/error-handler";
-import { NOTICE_DURATION_MS } from "../constants";
+import { NOTICE_DURATION_MS, PLUGIN_ID } from "../constants";
 
 /** Callback type for session state changes */
 export type SessionStateCallback = (state: SessionState | null) => void;
@@ -33,6 +34,11 @@ export class SessionManager {
 
 	private session: SessionState | null = null;
 	private stateCallbacks: Set<SessionStateCallback> = new Set();
+
+	/** Path to session persistence file */
+	private get sessionFilePath(): string {
+		return `.obsidian/plugins/${PLUGIN_ID}/session.json`;
+	}
 
 	constructor(
 		app: App,
@@ -108,6 +114,15 @@ export class SessionManager {
 			return false;
 		}
 
+		// Validate queue exists before syncing
+		if (!this.queueManager.getQueue(queueId)) {
+			new Notice("Queue not found.", NOTICE_DURATION_MS);
+			return false;
+		}
+
+		// Sync queue with vault to pick up any new/removed notes
+		this.queueManager.syncQueue(queueId);
+
 		// Get due notes for the queue
 		const dueCards = this.queueManager.getDueNotes(queueId);
 
@@ -140,6 +155,7 @@ export class SessionManager {
 		await this.openCurrentNote();
 
 		this.notifyStateChange();
+		void this.persistSession();
 		return true;
 	}
 
@@ -153,9 +169,11 @@ export class SessionManager {
 
 		const reviewed = this.session.reviewed;
 		const total = this.session.totalNotes;
+		const queueId = this.session.queueId;
 
 		this.session = null;
 		this.notifyStateChange();
+		void this.clearPersistedSession();
 
 		if (reviewed > 0) {
 			new Notice(
@@ -164,8 +182,8 @@ export class SessionManager {
 			);
 		}
 
-		// Update queue stats
-		// Note: This would be called after session ends
+		// Refresh queue stats so UI reflects post-session state
+		this.queueManager.updateQueueStats(queueId);
 	}
 
 	// ============================================================================
@@ -222,6 +240,9 @@ export class SessionManager {
 		// Update session stats
 		this.session.reviewed++;
 		this.session.ratings[rating]++;
+
+		// Refresh queue stats immediately so UI shows fresh numbers
+		this.queueManager.updateQueueStats(queueId);
 
 		// Move to next note
 		await this.advanceToNext();
@@ -335,6 +356,7 @@ export class SessionManager {
 
 		await this.openCurrentNote();
 		this.notifyStateChange();
+		void this.persistSession();
 	}
 
 	/**
@@ -454,5 +476,128 @@ export class SessionManager {
 	 */
 	canGoBack(): boolean {
 		return (this.session?.currentIndex ?? 0) > 0;
+	}
+
+	// ============================================================================
+	// Session Persistence
+	// ============================================================================
+
+	/**
+	 * Persist current session state to disk
+	 */
+	private async persistSession(): Promise<void> {
+		if (!this.session) {
+			await this.clearPersistedSession();
+			return;
+		}
+
+		const persisted: PersistedSession = {
+			queueId: this.session.queueId,
+			sessionId: this.session.sessionId,
+			currentIndex: this.session.currentIndex,
+			reviewed: this.session.reviewed,
+			ratings: { ...this.session.ratings },
+			reviewQueue: this.session.reviewQueue,
+			startedAt: this.session.startedAt.toISOString(),
+		};
+
+		try {
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return;
+			await adapter.write(
+				this.sessionFilePath,
+				JSON.stringify(persisted)
+			);
+		} catch (error) {
+			console.error("[FSRS] Failed to persist session:", error);
+		}
+	}
+
+	/**
+	 * Clear persisted session file
+	 */
+	private async clearPersistedSession(): Promise<void> {
+		try {
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return;
+			if (await adapter.exists(this.sessionFilePath)) {
+				await adapter.remove(this.sessionFilePath);
+			}
+		} catch {
+			// Ignore — file may not exist
+		}
+	}
+
+	/**
+	 * Try to resume a persisted session (call on startup)
+	 * Returns true if a session was successfully resumed
+	 */
+	async tryResumeSession(): Promise<boolean> {
+		try {
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return false;
+
+			if (!(await adapter.exists(this.sessionFilePath))) {
+				return false;
+			}
+
+			const raw = await adapter.read(this.sessionFilePath);
+			const persisted: unknown = JSON.parse(raw);
+
+			if (!persisted || typeof persisted !== "object") {
+				await this.clearPersistedSession();
+				return false;
+			}
+
+			const p = persisted as PersistedSession;
+
+			// Validate the queue still exists
+			const queue = this.queueManager.getQueue(p.queueId);
+			if (!queue) {
+				await this.clearPersistedSession();
+				return false;
+			}
+
+			// Validate review queue paths still have cards
+			const validPaths = p.reviewQueue.filter(
+				(path) => this.cardManager.getCard(path) !== undefined
+			);
+
+			if (validPaths.length === 0 || p.currentIndex >= validPaths.length) {
+				await this.clearPersistedSession();
+				return false;
+			}
+
+			const currentPath = validPaths[p.currentIndex];
+			if (!currentPath) {
+				await this.clearPersistedSession();
+				return false;
+			}
+
+			// Rebuild session state
+			this.session = {
+				queueId: p.queueId,
+				sessionId: p.sessionId,
+				currentIndex: p.currentIndex,
+				totalNotes: validPaths.length,
+				currentNotePath: currentPath,
+				reviewed: p.reviewed,
+				ratings: p.ratings,
+				startedAt: new Date(p.startedAt),
+				reviewQueue: validPaths,
+				history: [], // History is not persisted — undo not available after resume
+			};
+
+			this.notifyStateChange();
+			new Notice(
+				`Resumed review session (${this.session.reviewed} reviewed, ${validPaths.length - p.currentIndex} remaining)`,
+				NOTICE_DURATION_MS
+			);
+			return true;
+		} catch (error) {
+			console.error("[FSRS] Failed to resume session:", error);
+			await this.clearPersistedSession();
+			return false;
+		}
 	}
 }

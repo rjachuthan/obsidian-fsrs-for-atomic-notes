@@ -183,6 +183,9 @@ export class OrphanDetector {
 
 		this.dataStore.setCard(newPath, restoredCard);
 
+		// Migrate review logs from old path to new path
+		this.dataStore.migrateReviewLogPaths(orphan.originalPath, newPath);
+
 		// Mark orphan as resolved
 		this.dataStore.updateOrphan(orphanId, {
 			status: "resolved",

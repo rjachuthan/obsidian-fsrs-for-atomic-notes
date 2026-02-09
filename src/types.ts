@@ -380,6 +380,20 @@ export interface SessionHistoryEntry {
 	previousSchedule: CardSchedule;
 }
 
+/**
+ * Lightweight session snapshot for persistence across restarts.
+ * History/undo data is intentionally omitted — not critical for resume.
+ */
+export interface PersistedSession {
+	queueId: string;
+	sessionId: string;
+	currentIndex: number;
+	reviewed: number;
+	ratings: Record<RatingValue, number>;
+	reviewQueue: string[];
+	startedAt: string; // ISO string (Date is not serializable)
+}
+
 // ============================================================================
 // Selection Criterion Interface
 // ============================================================================

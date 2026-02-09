@@ -15,23 +15,16 @@ export interface BackupInfo {
 }
 
 /**
- * BackupManager exposes backup creation, listing, restore, and cleanup
+ * BackupManager exposes backup listing, restore, and recovery
  */
 export class BackupManager {
 	constructor(private dataStore: DataStore) {}
 
 	/**
-	 * Create a backup of current data (stored in plugin data; keep last 5)
-	 */
-	createBackup(): void {
-		this.dataStore.createBackupBeforeSave();
-	}
-
-	/**
 	 * List available backups (newest first) for UI
 	 */
-	listBackups(): BackupInfo[] {
-		const entries = this.dataStore.listBackups();
+	async listBackups(): Promise<BackupInfo[]> {
+		const entries = await this.dataStore.listBackups();
 		return entries.map((e) => ({
 			id: e.id,
 			timestamp: e.timestamp,
@@ -42,21 +35,15 @@ export class BackupManager {
 	/**
 	 * Restore from a backup by ID (replaces in-memory data; caller should save)
 	 */
-	restoreFromBackup(backupId: string): boolean {
+	async restoreFromBackup(backupId: string): Promise<boolean> {
 		return this.dataStore.restoreFromBackup(backupId);
-	}
-
-	/**
-	 * Remove old backups (keep last 5)
-	 */
-	cleanupOldBackups(): void {
-		this.dataStore.cleanupOldBackups();
 	}
 
 	/**
 	 * Get raw backup entry by ID (e.g. for preview)
 	 */
-	getBackupEntry(backupId: string): BackupEntry | undefined {
-		return this.dataStore.listBackups().find((b) => b.id === backupId);
+	async getBackupEntry(backupId: string): Promise<BackupEntry | undefined> {
+		const backups = await this.dataStore.listBackups();
+		return backups.find((b) => b.id === backupId);
 	}
 }

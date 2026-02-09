@@ -2,6 +2,16 @@
 
 Spaced repetition for atomic notes using the **FSRS** (Free Spaced Repetition Scheduler) algorithm. Your notes stay untouched—all scheduling data is stored externally in the plugin data folder.
 
+## Screenshots
+
+**Default view**
+
+![Default view](docs/images/default%20view.png)
+
+**Dashboard**
+
+![Dashboard](docs/images/dashboard.jpg)
+
 ## Installation
 
 ### From Community Plugins

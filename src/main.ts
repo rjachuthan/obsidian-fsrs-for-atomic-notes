@@ -76,7 +76,7 @@ export default class FSRSPlugin extends Plugin {
 		);
 
 		// Initialize sync services
-		this.noteWatcher = new NoteWatcher(this.app, this.cardManager, this.dataStore);
+		this.noteWatcher = new NoteWatcher(this.app, this.cardManager, this.dataStore, this.queueManager);
 		this.orphanDetector = new OrphanDetector(this.app, this.cardManager, this.dataStore);
 
 		// Register vault events via NoteWatcher
@@ -127,12 +127,23 @@ export default class FSRSPlugin extends Plugin {
 			this.openDashboard();
 		});
 
-		// Sync default queue on startup
+		// Sync all queues on startup and resume session if available
 		this.app.workspace.onLayoutReady(() => {
 			void Promise.resolve()
-				.then(() => {
+				.then(async () => {
 					this.queueManager.syncDefaultQueue();
+					for (const queue of this.queueManager.getAllQueues()) {
+						if (queue.id !== "default") {
+							this.queueManager.syncQueue(queue.id);
+						}
+					}
 					this.orphanDetector.detectOrphans();
+
+					// Resume interrupted session if one exists
+					const resumed = await this.sessionManager.tryResumeSession();
+					if (resumed) {
+						await this.activateSidebar();
+					}
 				})
 				.catch((error) => {
 					handleError(error, { component: "startup sync", notifyUser: true });
@@ -148,11 +159,13 @@ export default class FSRSPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		// End any active session
-		this.sessionManager.endSession();
+		// End any active session (guard for partial init)
+		this.sessionManager?.endSession();
 
 		// Save any pending data
-		void this.dataStore.forceSave();
+		if (this.dataStore) {
+			void this.dataStore.forceSave();
+		}
 	}
 
 	/**

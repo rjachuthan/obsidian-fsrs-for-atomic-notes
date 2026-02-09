@@ -177,7 +177,7 @@ export class QueueListModal extends Modal {
 
 		if (criteria.type === "folder") {
 			const folders = criteria.folders ?? [];
-			if (folders.length === 0) return "All folders";
+			if (folders.length === 0) return "No folders selected";
 			if (folders.length === 1) return `Folder: ${folders[0] || "(root)"}`;
 			return `Folders: ${folders.length} selected`;
 		}

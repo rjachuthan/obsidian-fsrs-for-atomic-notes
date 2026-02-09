@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-fsrs-atomic",
 	"name": "FSRS for Atomic Notes",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"minAppVersion": "1.0.0",
 	"description": "Spaced repetition for atomic notes using the FSRS algorithm. Zero note pollution - all scheduling data stored externally.",
 	"author": "Rituraj",

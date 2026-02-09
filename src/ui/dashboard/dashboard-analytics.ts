@@ -240,19 +240,24 @@ export function calculateRetentionStats(
 	let totalRetrievability = 0;
 	let cardCount = 0;
 
+	const now = new Date();
 	for (const card of Object.values(cards)) {
-		const schedule = queueId ? card.schedules[queueId] : Object.values(card.schedules)[0];
-		if (!schedule) continue;
+		const schedules = queueId
+			? { [queueId]: card.schedules[queueId] }
+			: card.schedules;
 
-		// Simple retrievability estimate based on stability and elapsed time
-		const now = new Date();
-		const elapsedDays = (now.getTime() - (schedule.lastReview ? parseISODate(schedule.lastReview).getTime() : now.getTime())) / (1000 * 60 * 60 * 24);
+		for (const schedule of Object.values(schedules)) {
+			if (!schedule) continue;
 
-		if (schedule.stability > 0) {
-			// R = exp(-t/S) where t is elapsed time and S is stability
-			const retrievability = Math.exp(-elapsedDays / schedule.stability);
-			totalRetrievability += retrievability;
-			cardCount++;
+			// Simple retrievability estimate based on stability and elapsed time
+			const elapsedDays = (now.getTime() - (schedule.lastReview ? parseISODate(schedule.lastReview).getTime() : now.getTime())) / (1000 * 60 * 60 * 24);
+
+			if (schedule.stability > 0) {
+				// R = exp(-t/S) where t is elapsed time and S is stability
+				const retrievability = Math.exp(-elapsedDays / schedule.stability);
+				totalRetrievability += retrievability;
+				cardCount++;
+			}
 		}
 	}
 
@@ -292,26 +297,31 @@ export function generateForecast(
 		let newCount = 0;
 
 		for (const card of Object.values(cards)) {
-			const schedule = queueId ? card.schedules[queueId] : Object.values(card.schedules)[0];
-			if (!schedule) continue;
+			const schedules = queueId
+				? { [queueId]: card.schedules[queueId] }
+				: card.schedules;
 
-			const dueDate = parseISODate(schedule.due);
+			for (const schedule of Object.values(schedules)) {
+				if (!schedule) continue;
 
-			// Card is due on this day
-			if (dueDate >= targetDate && dueDate < nextDate) {
-				if (schedule.state === 0) {
-					newCount++;
-				} else {
-					dueCount++;
+				const dueDate = parseISODate(schedule.due);
+
+				// Card is due on this day
+				if (dueDate >= targetDate && dueDate < nextDate) {
+					if (schedule.state === 0) {
+						newCount++;
+					} else {
+						dueCount++;
+					}
 				}
-			}
 
-			// For day 0, include overdue cards
-			if (i === 0 && dueDate < targetDate) {
-				if (schedule.state === 0) {
-					newCount++;
-				} else {
-					dueCount++;
+				// For day 0, include overdue cards
+				if (i === 0 && dueDate < targetDate) {
+					if (schedule.state === 0) {
+						newCount++;
+					} else {
+						dueCount++;
+					}
 				}
 			}
 		}
@@ -348,11 +358,16 @@ export function calculateStateDistribution(
 	let total = 0;
 
 	for (const card of Object.values(cards)) {
-		const schedule = queueId ? card.schedules[queueId] : Object.values(card.schedules)[0];
-		if (!schedule) continue;
+		const schedules = queueId
+			? { [queueId]: card.schedules[queueId] }
+			: card.schedules;
 
-		counts[schedule.state]++;
-		total++;
+		for (const schedule of Object.values(schedules)) {
+			if (!schedule) continue;
+
+			counts[schedule.state]++;
+			total++;
+		}
 	}
 
 	return ([0, 1, 2, 3] as CardState[]).map((state) => ({
@@ -386,21 +401,26 @@ export function calculateDifficultyDistribution(
 	let total = 0;
 
 	for (const card of Object.values(cards)) {
-		const schedule = queueId ? card.schedules[queueId] : Object.values(card.schedules)[0];
-		if (!schedule) continue;
+		const schedules = queueId
+			? { [queueId]: card.schedules[queueId] }
+			: card.schedules;
 
-		const difficulty = schedule.difficulty;
-		for (let i = 0; i < ranges.length; i++) {
-			const range = ranges[i];
-			if (range && difficulty >= range.min && difficulty < range.max) {
-				const current = counts[i];
-				if (current !== undefined) {
-					counts[i] = current + 1;
+		for (const schedule of Object.values(schedules)) {
+			if (!schedule) continue;
+
+			const difficulty = schedule.difficulty;
+			for (let i = 0; i < ranges.length; i++) {
+				const range = ranges[i];
+				if (range && difficulty >= range.min && difficulty < range.max) {
+					const current = counts[i];
+					if (current !== undefined) {
+						counts[i] = current + 1;
+					}
+					break;
 				}
-				break;
 			}
+			total++;
 		}
-		total++;
 	}
 
 	return ranges.map((range, i) => ({

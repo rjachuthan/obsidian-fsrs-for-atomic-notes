@@ -3,10 +3,12 @@
  * Handles file renames, deletions, and creates orphan records
  */
 
+import { TFile } from "obsidian";
 import type { App, Plugin, TAbstractFile } from "obsidian";
 import { Notice } from "obsidian";
 import type { CardManager } from "../fsrs/card-manager";
 import type { DataStore } from "../data/data-store";
+import type { QueueManager } from "../queues/queue-manager";
 import type { OrphanRecord } from "../types";
 import { generateId } from "../utils/id-generator";
 import { nowISO } from "../utils/date-utils";
@@ -19,17 +21,26 @@ export class NoteWatcher {
 	private app: App;
 	private cardManager: CardManager;
 	private dataStore: DataStore;
+	private queueManager: QueueManager;
 
-	constructor(app: App, cardManager: CardManager, dataStore: DataStore) {
+	constructor(app: App, cardManager: CardManager, dataStore: DataStore, queueManager: QueueManager) {
 		this.app = app;
 		this.cardManager = cardManager;
 		this.dataStore = dataStore;
+		this.queueManager = queueManager;
 	}
 
 	/**
 	 * Register vault event handlers with the plugin
 	 */
 	registerEvents(plugin: Plugin): void {
+		// Handle file creation
+		plugin.registerEvent(
+			this.app.vault.on("create", (file: TAbstractFile) => {
+				this.handleCreate(file);
+			})
+		);
+
 		// Handle file renames
 		plugin.registerEvent(
 			this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
@@ -43,6 +54,60 @@ export class NoteWatcher {
 				this.handleDelete(file);
 			})
 		);
+
+		// Handle metadata changes (tag edits, frontmatter updates)
+		plugin.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				this.handleMetadataChange(file);
+			})
+		);
+	}
+
+	/**
+	 * Handle file creation event
+	 */
+	private handleCreate(file: TAbstractFile): void {
+		if (!(file instanceof TFile) || !file.path.endsWith(".md")) {
+			return;
+		}
+
+		const queues = this.queueManager.getAllQueues();
+		const noteResolver = this.queueManager.getNoteResolver();
+
+		for (const queue of queues) {
+			if (noteResolver.matchesNoteCriteria(file, queue.criteria)) {
+				if (!this.cardManager.getCard(file.path)) {
+					this.cardManager.createCard(file.path, queue.id);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Handle metadata change event (tag edits, frontmatter updates)
+	 * Re-evaluates queue membership for the changed note
+	 */
+	private handleMetadataChange(file: TFile): void {
+		if (!file.path.endsWith(".md")) {
+			return;
+		}
+
+		const queues = this.queueManager.getAllQueues();
+		const noteResolver = this.queueManager.getNoteResolver();
+		const card = this.cardManager.getCard(file.path);
+
+		for (const queue of queues) {
+			const matches = noteResolver.matchesNoteCriteria(file, queue.criteria);
+			const hasSchedule = card?.schedules[queue.id] !== undefined;
+
+			if (matches && !hasSchedule) {
+				// Note now matches this queue — add it
+				this.cardManager.createCard(file.path, queue.id);
+			} else if (!matches && hasSchedule) {
+				// Note no longer matches — remove from queue
+				this.cardManager.removeFromQueue(file.path, queue.id);
+			}
+		}
 	}
 
 	/**

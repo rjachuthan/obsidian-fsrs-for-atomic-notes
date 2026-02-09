@@ -71,16 +71,43 @@ export class MetadataCache {
 	}
 }
 
+// Mock DataAdapter (vault.adapter)
+export class DataAdapter {
+	private adapterFiles: Map<string, string> = new Map();
+
+	async read(path: string): Promise<string> {
+		const content = this.adapterFiles.get(path);
+		if (content === undefined) {
+			throw new Error(`File not found: ${path}`);
+		}
+		return content;
+	}
+
+	async write(path: string, data: string): Promise<void> {
+		this.adapterFiles.set(path, data);
+	}
+
+	async exists(path: string): Promise<boolean> {
+		return this.adapterFiles.has(path);
+	}
+
+	async remove(path: string): Promise<void> {
+		this.adapterFiles.delete(path);
+	}
+}
+
 // Mock Vault
 export class Vault {
 	private files: Map<string, TFile> = new Map();
 	private folders: Map<string, TFolder> = new Map();
 	private fileContents: Map<string, string> = new Map();
 	private listeners: Map<string, Set<(...args: unknown[]) => void>> = new Map();
+	adapter: DataAdapter;
 
 	constructor() {
 		// Create root folder
 		this.folders.set('', new TFolder('', this));
+		this.adapter = new DataAdapter();
 	}
 
 	getAbstractFileByPath(path: string): TAbstractFile | null {
@@ -227,7 +254,7 @@ export class App {
 // Mock Plugin class
 export class Plugin {
 	app: App;
-	manifest: { id: string; name: string; version: string };
+	manifest: { id: string; name: string; version: string; dir?: string };
 	private data: unknown = null;
 	private registeredEvents: (() => void)[] = [];
 
@@ -237,6 +264,7 @@ export class Plugin {
 			id: 'obsidian-fsrs-atomic',
 			name: 'FSRS for Atomic Notes',
 			version: '0.1.0',
+			dir: '.obsidian/plugins/obsidian-fsrs-atomic',
 		};
 	}
 
