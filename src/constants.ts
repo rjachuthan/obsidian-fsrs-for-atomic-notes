@@ -70,6 +70,9 @@ export const DEFAULT_QUEUE_STATS: QueueStats = {
 /** Maximum number of backups to keep for recovery */
 export const MAX_BACKUPS = 5;
 
+/** Maximum number of review log entries to keep (older entries are purged) */
+export const MAX_REVIEW_HISTORY = 50_000;
+
 /** Default plugin data (fresh installation) */
 export const DEFAULT_PLUGIN_DATA: PluginData = {
 	version: CURRENT_SCHEMA_VERSION,
@@ -142,6 +145,9 @@ export const MIN_SAVE_INTERVAL_MS = 500;
 
 /** Backup file suffix */
 export const BACKUP_SUFFIX = ".backup";
+
+/** Minimum interval between automatic backups (ms) — 1 hour */
+export const BACKUP_INTERVAL_MS = 60 * 60 * 1000;
 
 // ============================================================================
 // Performance Constants

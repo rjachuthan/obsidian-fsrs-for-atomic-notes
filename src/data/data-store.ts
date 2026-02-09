@@ -22,6 +22,9 @@ import {
 	SAVE_DEBOUNCE_MS,
 	MIN_SAVE_INTERVAL_MS,
 	MAX_BACKUPS,
+	MAX_REVIEW_HISTORY,
+	BACKUP_INTERVAL_MS,
+	PLUGIN_ID,
 } from "../constants";
 import { nowISO } from "../utils/date-utils";
 
@@ -36,6 +39,7 @@ export class DataStore {
 	private lastSaveTime = 0;
 	private dirty = false;
 	private initialized = false;
+	private lastBackupTime = 0;
 
 	constructor(plugin: Plugin) {
 		this.plugin = plugin;
@@ -363,63 +367,96 @@ export class DataStore {
 	}
 
 	/**
-	 * Create a backup of current data before a save (call before risky writes)
+	 * Path to the separate backups file
 	 */
-	createBackupBeforeSave(): void {
-		const snapshot = this.getSnapshot();
-		const dataWithoutBackups: Omit<PluginData, "backups"> = {
-			version: snapshot.version,
-			settings: snapshot.settings,
-			queues: snapshot.queues,
-			cards: snapshot.cards,
-			reviews: snapshot.reviews,
-			orphans: snapshot.orphans,
-		};
-		const entry: BackupEntry = {
-			id: `backup-${Date.now()}`,
-			timestamp: Date.now(),
-			data: dataWithoutBackups,
-		};
-		if (!this.data.backups) {
-			this.data.backups = [];
-		}
-		this.data.backups.push(entry);
-		this.data.backups = this.data.backups.slice(-MAX_BACKUPS);
+	private get backupsFilePath(): string {
+		return `${this.plugin.manifest.dir}/backups.json`;
 	}
 
 	/**
-	 * List available backups (newest first)
+	 * Create a backup of current data before a save.
+	 * Backups are written to a separate file and throttled to BACKUP_INTERVAL_MS.
 	 */
-	listBackups(): BackupEntry[] {
-		const list = this.data.backups ?? [];
-		return [...list].reverse();
+	private async createBackupBeforeSave(): Promise<void> {
+		const now = Date.now();
+		if (now - this.lastBackupTime < BACKUP_INTERVAL_MS) {
+			return;
+		}
+
+		try {
+			const snapshot = this.getSnapshot();
+			const dataWithoutBackups: Omit<PluginData, "backups"> = {
+				version: snapshot.version,
+				settings: snapshot.settings,
+				queues: snapshot.queues,
+				cards: snapshot.cards,
+				reviews: snapshot.reviews,
+				orphans: snapshot.orphans,
+			};
+			const entry: BackupEntry = {
+				id: `backup-${now}`,
+				timestamp: now,
+				data: dataWithoutBackups,
+			};
+
+			// Read existing backups from file
+			let backups: BackupEntry[] = [];
+			try {
+				const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
+				const parsed = JSON.parse(raw);
+				if (Array.isArray(parsed)) {
+					backups = parsed;
+				}
+			} catch {
+				// File doesn't exist yet — start fresh
+			}
+
+			backups.push(entry);
+			backups = backups.slice(-MAX_BACKUPS);
+
+			await this.plugin.app.vault.adapter.write(
+				this.backupsFilePath,
+				JSON.stringify(backups)
+			);
+			this.lastBackupTime = now;
+		} catch (error) {
+			console.error("[FSRS] Failed to write backup:", error);
+		}
+	}
+
+	/**
+	 * List available backups (newest first) from the separate backups file
+	 */
+	async listBackups(): Promise<BackupEntry[]> {
+		try {
+			const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return (parsed as BackupEntry[]).reverse();
+			}
+		} catch {
+			// No backups file yet
+		}
+		// Fall back to legacy in-data backups for migration
+		const legacy = this.data.backups ?? [];
+		return [...legacy].reverse();
 	}
 
 	/**
 	 * Restore from a backup by ID (replaces current data in memory; call save() to persist)
 	 */
-	restoreFromBackup(backupId: string): boolean {
-		const entry = this.data.backups?.find((b) => b.id === backupId);
+	async restoreFromBackup(backupId: string): Promise<boolean> {
+		const backups = await this.listBackups();
+		const entry = backups.find((b) => b.id === backupId);
 		if (!entry) {
 			return false;
 		}
 		this.data = {
 			...entry.data,
-			backups: this.data.backups,
+			backups: [],
 		};
 		this.dirty = true;
 		return true;
-	}
-
-	/**
-	 * Remove old backups (keep last MAX_BACKUPS)
-	 */
-	cleanupOldBackups(): void {
-		if (!this.data.backups || this.data.backups.length <= MAX_BACKUPS) {
-			return;
-		}
-		this.data.backups = this.data.backups.slice(-MAX_BACKUPS);
-		this.markDirty();
 	}
 
 	// ============================================================================
@@ -611,11 +648,36 @@ export class DataStore {
 	// ============================================================================
 
 	/**
-	 * Add a review log entry
+	 * Add a review log entry (auto-compacts when exceeding MAX_REVIEW_HISTORY)
 	 */
 	addReview(review: ReviewLog): void {
 		this.data.reviews.push(review);
+
+		// Compact if we've exceeded the limit by 10% to avoid trimming on every add
+		if (this.data.reviews.length > MAX_REVIEW_HISTORY * 1.1) {
+			this.compactReviews();
+		}
+
 		this.markDirty();
+	}
+
+	/**
+	 * Compact review history by removing oldest entries beyond the limit.
+	 * Undone reviews are removed first since they carry no analytical value.
+	 */
+	private compactReviews(): void {
+		const reviews = this.data.reviews;
+		if (reviews.length <= MAX_REVIEW_HISTORY) return;
+
+		// Remove undone reviews first
+		const active = reviews.filter((r) => !r.undone);
+
+		if (active.length <= MAX_REVIEW_HISTORY) {
+			this.data.reviews = active;
+		} else {
+			// Keep most recent entries
+			this.data.reviews = active.slice(-MAX_REVIEW_HISTORY);
+		}
 	}
 
 	/**
@@ -686,7 +748,9 @@ export class DataStore {
 		const delay = Math.max(SAVE_DEBOUNCE_MS, MIN_SAVE_INTERVAL_MS - timeSinceLastSave);
 
 		this.saveTimeout = setTimeout(() => {
-			void this.save();
+			this.save().catch((error) => {
+				console.error("[FSRS] Background save failed after all retries:", error);
+			});
 		}, delay);
 	}
 
@@ -708,7 +772,12 @@ export class DataStore {
 			this.saveTimeout = null;
 		}
 
-		this.createBackupBeforeSave();
+		await this.createBackupBeforeSave();
+
+		// Clear legacy in-data backups to reduce data.json size
+		if (this.data.backups && this.data.backups.length > 0) {
+			this.data.backups = [];
+		}
 
 		let lastError: Error | null = null;
 		for (let attempt = 0; attempt < DataStore.SAVE_MAX_RETRIES; attempt++) {
