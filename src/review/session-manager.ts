@@ -114,6 +114,12 @@ export class SessionManager {
 			return false;
 		}
 
+		// Validate queue exists before syncing
+		if (!this.queueManager.getQueue(queueId)) {
+			new Notice("Queue not found.", NOTICE_DURATION_MS);
+			return false;
+		}
+
 		// Sync queue with vault to pick up any new/removed notes
 		this.queueManager.syncQueue(queueId);
 
