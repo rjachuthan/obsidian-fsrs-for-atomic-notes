@@ -76,7 +76,7 @@ export default class FSRSPlugin extends Plugin {
 		);
 
 		// Initialize sync services
-		this.noteWatcher = new NoteWatcher(this.app, this.cardManager, this.dataStore);
+		this.noteWatcher = new NoteWatcher(this.app, this.cardManager, this.dataStore, this.queueManager);
 		this.orphanDetector = new OrphanDetector(this.app, this.cardManager, this.dataStore);
 
 		// Register vault events via NoteWatcher

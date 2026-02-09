@@ -3,10 +3,11 @@
  * Handles file renames, deletions, and creates orphan records
  */
 
-import type { App, Plugin, TAbstractFile } from "obsidian";
+import type { App, Plugin, TAbstractFile, TFile } from "obsidian";
 import { Notice } from "obsidian";
 import type { CardManager } from "../fsrs/card-manager";
 import type { DataStore } from "../data/data-store";
+import type { QueueManager } from "../queues/queue-manager";
 import type { OrphanRecord } from "../types";
 import { generateId } from "../utils/id-generator";
 import { nowISO } from "../utils/date-utils";
@@ -19,17 +20,26 @@ export class NoteWatcher {
 	private app: App;
 	private cardManager: CardManager;
 	private dataStore: DataStore;
+	private queueManager: QueueManager;
 
-	constructor(app: App, cardManager: CardManager, dataStore: DataStore) {
+	constructor(app: App, cardManager: CardManager, dataStore: DataStore, queueManager: QueueManager) {
 		this.app = app;
 		this.cardManager = cardManager;
 		this.dataStore = dataStore;
+		this.queueManager = queueManager;
 	}
 
 	/**
 	 * Register vault event handlers with the plugin
 	 */
 	registerEvents(plugin: Plugin): void {
+		// Handle file creation
+		plugin.registerEvent(
+			this.app.vault.on("create", (file: TAbstractFile) => {
+				this.handleCreate(file);
+			})
+		);
+
 		// Handle file renames
 		plugin.registerEvent(
 			this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
@@ -43,6 +53,33 @@ export class NoteWatcher {
 				this.handleDelete(file);
 			})
 		);
+	}
+
+	/**
+	 * Handle file creation event
+	 */
+	private handleCreate(file: TAbstractFile): void {
+		// Only process markdown files
+		if (!file.path.endsWith(".md")) {
+			return;
+		}
+
+		// Cast to TFile (safe after .md check)
+		const tfile = file as TFile;
+
+		// Get all queues
+		const queues = this.queueManager.getAllQueues();
+		const noteResolver = this.queueManager.getNoteResolver();
+
+		// Check each queue to see if this note matches
+		for (const queue of queues) {
+			if (noteResolver.matchesNoteCriteria(tfile, queue.criteria)) {
+				// Note matches this queue - create a card if it doesn't exist
+				if (!this.cardManager.getCard(file.path)) {
+					this.cardManager.createCard(file.path, queue.id);
+				}
+			}
+		}
 	}
 
 	/**
