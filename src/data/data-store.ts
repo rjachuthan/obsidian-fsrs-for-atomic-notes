@@ -24,7 +24,6 @@ import {
 	MAX_BACKUPS,
 	MAX_REVIEW_HISTORY,
 	BACKUP_INTERVAL_MS,
-	PLUGIN_ID,
 } from "../constants";
 import { nowISO } from "../utils/date-utils";
 
@@ -403,9 +402,9 @@ export class DataStore {
 			let backups: BackupEntry[] = [];
 			try {
 				const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
-				const parsed = JSON.parse(raw);
+				const parsed: unknown = JSON.parse(raw);
 				if (Array.isArray(parsed)) {
-					backups = parsed;
+					backups = parsed as BackupEntry[];
 				}
 			} catch {
 				// File doesn't exist yet — start fresh
@@ -430,7 +429,7 @@ export class DataStore {
 	async listBackups(): Promise<BackupEntry[]> {
 		try {
 			const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
-			const parsed = JSON.parse(raw);
+			const parsed: unknown = JSON.parse(raw);
 			if (Array.isArray(parsed)) {
 				return (parsed as BackupEntry[]).reverse();
 			}

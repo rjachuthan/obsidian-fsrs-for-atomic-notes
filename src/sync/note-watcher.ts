@@ -3,7 +3,8 @@
  * Handles file renames, deletions, and creates orphan records
  */
 
-import type { App, Plugin, TAbstractFile, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Plugin, TAbstractFile } from "obsidian";
 import { Notice } from "obsidian";
 import type { CardManager } from "../fsrs/card-manager";
 import type { DataStore } from "../data/data-store";
@@ -66,22 +67,15 @@ export class NoteWatcher {
 	 * Handle file creation event
 	 */
 	private handleCreate(file: TAbstractFile): void {
-		// Only process markdown files
-		if (!file.path.endsWith(".md")) {
+		if (!(file instanceof TFile) || !file.path.endsWith(".md")) {
 			return;
 		}
 
-		// Cast to TFile (safe after .md check)
-		const tfile = file as TFile;
-
-		// Get all queues
 		const queues = this.queueManager.getAllQueues();
 		const noteResolver = this.queueManager.getNoteResolver();
 
-		// Check each queue to see if this note matches
 		for (const queue of queues) {
-			if (noteResolver.matchesNoteCriteria(tfile, queue.criteria)) {
-				// Note matches this queue - create a card if it doesn't exist
+			if (noteResolver.matchesNoteCriteria(file, queue.criteria)) {
 				if (!this.cardManager.getCard(file.path)) {
 					this.cardManager.createCard(file.path, queue.id);
 				}
