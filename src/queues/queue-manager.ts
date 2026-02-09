@@ -118,15 +118,13 @@ export class QueueManager {
 	}
 
 	/**
-	 * Delete a queue
+	 * Delete a queue. Always cleans up schedule entries for this queue from all cards.
+	 * Cards that have no remaining schedules are deleted entirely.
 	 */
-	deleteQueue(id: string, removeCards: boolean = false): void {
-		if (removeCards) {
-			// Remove all cards from this queue
-			const cards = this.cardManager.getCardsForQueue(id);
-			for (const card of cards) {
-				this.cardManager.removeFromQueue(card.notePath, id);
-			}
+	deleteQueue(id: string): void {
+		const cards = this.cardManager.getCardsForQueue(id);
+		for (const card of cards) {
+			this.cardManager.removeFromQueue(card.notePath, id);
 		}
 
 		this.dataStore.deleteQueue(id);

@@ -69,6 +69,7 @@ export default class FSRSPlugin extends Plugin {
 		// Initialize session manager
 		this.sessionManager = new SessionManager(
 			this.app,
+			this,
 			this.dataStore,
 			this.cardManager,
 			this.queueManager,
@@ -127,12 +128,23 @@ export default class FSRSPlugin extends Plugin {
 			this.openDashboard();
 		});
 
-		// Sync default queue on startup
+		// Sync all queues on startup and resume session if available
 		this.app.workspace.onLayoutReady(() => {
 			void Promise.resolve()
-				.then(() => {
+				.then(async () => {
 					this.queueManager.syncDefaultQueue();
+					for (const queue of this.queueManager.getAllQueues()) {
+						if (queue.id !== "default") {
+							this.queueManager.syncQueue(queue.id);
+						}
+					}
 					this.orphanDetector.detectOrphans();
+
+					// Resume interrupted session if one exists
+					const resumed = await this.sessionManager.tryResumeSession();
+					if (resumed) {
+						await this.activateSidebar();
+					}
 				})
 				.catch((error) => {
 					handleError(error, { component: "startup sync", notifyUser: true });

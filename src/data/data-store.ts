@@ -14,6 +14,7 @@ import type {
 	BackupEntry,
 	DeepPartial,
 	PropertyMatch,
+	FSRSParams,
 } from "../types";
 import {
 	CURRENT_SCHEMA_VERSION,
@@ -24,6 +25,7 @@ import {
 	MAX_BACKUPS,
 	MAX_REVIEW_HISTORY,
 	BACKUP_INTERVAL_MS,
+	DEFAULT_FSRS_PARAMS,
 } from "../constants";
 import { nowISO } from "../utils/date-utils";
 
@@ -207,8 +209,33 @@ export class DataStore {
 				["left", "right"],
 				DEFAULT_SETTINGS.sidebarPosition
 			),
-			fsrsParams: s.fsrsParams as PluginSettings["fsrsParams"],
+			fsrsParams: this.validateFsrsParams(s.fsrsParams),
 		};
+	}
+
+	/**
+	 * Validate FSRS parameters with bounds checking
+	 */
+	private validateFsrsParams(params: unknown): FSRSParams | undefined {
+		if (!params || typeof params !== "object") {
+			return undefined; // Use defaults from constants
+		}
+
+		const p = params as Record<string, unknown>;
+
+		const requestRetention = typeof p.requestRetention === "number"
+			? Math.max(0.7, Math.min(0.97, p.requestRetention))
+			: DEFAULT_FSRS_PARAMS.requestRetention;
+
+		const maximumInterval = typeof p.maximumInterval === "number" && Number.isInteger(p.maximumInterval)
+			? Math.max(1, Math.min(36500, p.maximumInterval))
+			: DEFAULT_FSRS_PARAMS.maximumInterval;
+
+		const enableFuzz = typeof p.enableFuzz === "boolean"
+			? p.enableFuzz
+			: DEFAULT_FSRS_PARAMS.enableFuzz;
+
+		return { requestRetention, maximumInterval, enableFuzz };
 	}
 
 	/**
