@@ -6,7 +6,7 @@
 import { Modal, App } from "obsidian";
 import type { DataStore } from "../../data/data-store";
 import type { QueueManager } from "../../queues/queue-manager";
-import { DEFAULT_QUEUE_ID, DEFAULT_FSRS_PARAMS } from "../../constants";
+import { DEFAULT_FSRS_PARAMS } from "../../constants";
 
 // Import visualization components
 import {
@@ -33,7 +33,7 @@ import { renderNoteTable } from "./note-table";
 export class DashboardModal extends Modal {
 	private dataStore: DataStore;
 	private queueManager: QueueManager;
-	private selectedQueueId: string = DEFAULT_QUEUE_ID;
+	private selectedQueueId: string | undefined = undefined;
 
 	constructor(
 		app: App,
@@ -94,13 +94,13 @@ export class DashboardModal extends Modal {
 					attr: { value: queue.id },
 				});
 
-				if (queue.id === this.selectedQueueId) {
+				if (this.selectedQueueId !== undefined && queue.id === this.selectedQueueId) {
 					option.selected = true;
 				}
 			}
 
 			select.addEventListener("change", () => {
-				this.selectedQueueId = select.value || DEFAULT_QUEUE_ID;
+				this.selectedQueueId = select.value || undefined;
 				this.refresh();
 			});
 		}
@@ -135,7 +135,7 @@ export class DashboardModal extends Modal {
 		const settings = this.dataStore.getSettings();
 		const targetRetention = settings.fsrsParams?.requestRetention ?? DEFAULT_FSRS_PARAMS.requestRetention;
 
-		const queueId = this.selectedQueueId || undefined;
+		const queueId = this.selectedQueueId;
 
 		// Overview Cards Section
 		const overviewSection = container.createDiv({ cls: "fsrs-dashboard-section fsrs-dashboard-overview" });
