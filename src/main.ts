@@ -69,7 +69,6 @@ export default class FSRSPlugin extends Plugin {
 		// Initialize session manager
 		this.sessionManager = new SessionManager(
 			this.app,
-			this,
 			this.dataStore,
 			this.cardManager,
 			this.queueManager,
@@ -160,11 +159,13 @@ export default class FSRSPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		// End any active session
-		this.sessionManager.endSession();
+		// End any active session (guard for partial init)
+		this.sessionManager?.endSession();
 
 		// Save any pending data
-		void this.dataStore.forceSave();
+		if (this.dataStore) {
+			void this.dataStore.forceSave();
+		}
 	}
 
 	/**

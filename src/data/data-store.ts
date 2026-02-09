@@ -26,6 +26,7 @@ import {
 	MAX_REVIEW_HISTORY,
 	BACKUP_INTERVAL_MS,
 	DEFAULT_FSRS_PARAMS,
+	PLUGIN_ID,
 } from "../constants";
 import { nowISO } from "../utils/date-utils";
 
@@ -396,7 +397,7 @@ export class DataStore {
 	 * Path to the separate backups file
 	 */
 	private get backupsFilePath(): string {
-		return `${this.plugin.manifest.dir}/backups.json`;
+		return `.obsidian/plugins/${PLUGIN_ID}/backups.json`;
 	}
 
 	/**
@@ -406,6 +407,11 @@ export class DataStore {
 	private async createBackupBeforeSave(): Promise<void> {
 		const now = Date.now();
 		if (now - this.lastBackupTime < BACKUP_INTERVAL_MS) {
+			return;
+		}
+
+		const adapter = this.plugin.app.vault.adapter;
+		if (!adapter) {
 			return;
 		}
 
@@ -428,7 +434,7 @@ export class DataStore {
 			// Read existing backups from file
 			let backups: BackupEntry[] = [];
 			try {
-				const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
+				const raw = await adapter.read(this.backupsFilePath);
 				const parsed: unknown = JSON.parse(raw);
 				if (Array.isArray(parsed)) {
 					backups = parsed as BackupEntry[];
@@ -440,7 +446,7 @@ export class DataStore {
 			backups.push(entry);
 			backups = backups.slice(-MAX_BACKUPS);
 
-			await this.plugin.app.vault.adapter.write(
+			await adapter.write(
 				this.backupsFilePath,
 				JSON.stringify(backups)
 			);
@@ -454,14 +460,17 @@ export class DataStore {
 	 * List available backups (newest first) from the separate backups file
 	 */
 	async listBackups(): Promise<BackupEntry[]> {
-		try {
-			const raw = await this.plugin.app.vault.adapter.read(this.backupsFilePath);
-			const parsed: unknown = JSON.parse(raw);
-			if (Array.isArray(parsed)) {
-				return (parsed as BackupEntry[]).reverse();
+		const adapter = this.plugin.app.vault.adapter;
+		if (adapter) {
+			try {
+				const raw = await adapter.read(this.backupsFilePath);
+				const parsed: unknown = JSON.parse(raw);
+				if (Array.isArray(parsed)) {
+					return (parsed as BackupEntry[]).reverse();
+				}
+			} catch {
+				// No backups file yet
 			}
-		} catch {
-			// No backups file yet
 		}
 		// Fall back to legacy in-data backups for migration
 		const legacy = this.data.backups ?? [];

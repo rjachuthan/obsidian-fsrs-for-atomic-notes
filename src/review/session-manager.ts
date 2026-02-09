@@ -15,7 +15,6 @@ import type { DataStore } from "../data/data-store";
 import type { CardManager } from "../fsrs/card-manager";
 import type { QueueManager } from "../queues/queue-manager";
 import type { Scheduler } from "../fsrs/scheduler";
-import type { Plugin } from "obsidian";
 import { generateSessionId } from "../utils/id-generator";
 import { handleError } from "../utils/error-handler";
 import { NOTICE_DURATION_MS, PLUGIN_ID } from "../constants";
@@ -28,7 +27,6 @@ export type SessionStateCallback = (state: SessionState | null) => void;
  */
 export class SessionManager {
 	private app: App;
-	private plugin: Plugin;
 	private dataStore: DataStore;
 	private cardManager: CardManager;
 	private queueManager: QueueManager;
@@ -44,14 +42,12 @@ export class SessionManager {
 
 	constructor(
 		app: App,
-		plugin: Plugin,
 		dataStore: DataStore,
 		cardManager: CardManager,
 		queueManager: QueueManager,
 		scheduler: Scheduler
 	) {
 		this.app = app;
-		this.plugin = plugin;
 		this.dataStore = dataStore;
 		this.cardManager = cardManager;
 		this.queueManager = queueManager;
@@ -167,6 +163,7 @@ export class SessionManager {
 
 		const reviewed = this.session.reviewed;
 		const total = this.session.totalNotes;
+		const queueId = this.session.queueId;
 
 		this.session = null;
 		this.notifyStateChange();
@@ -179,8 +176,8 @@ export class SessionManager {
 			);
 		}
 
-		// Update queue stats
-		// Note: This would be called after session ends
+		// Refresh queue stats so UI reflects post-session state
+		this.queueManager.updateQueueStats(queueId);
 	}
 
 	// ============================================================================
@@ -499,7 +496,9 @@ export class SessionManager {
 		};
 
 		try {
-			await this.app.vault.adapter.write(
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return;
+			await adapter.write(
 				this.sessionFilePath,
 				JSON.stringify(persisted)
 			);
@@ -513,8 +512,10 @@ export class SessionManager {
 	 */
 	private async clearPersistedSession(): Promise<void> {
 		try {
-			if (await this.app.vault.adapter.exists(this.sessionFilePath)) {
-				await this.app.vault.adapter.remove(this.sessionFilePath);
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return;
+			if (await adapter.exists(this.sessionFilePath)) {
+				await adapter.remove(this.sessionFilePath);
 			}
 		} catch {
 			// Ignore — file may not exist
@@ -527,11 +528,14 @@ export class SessionManager {
 	 */
 	async tryResumeSession(): Promise<boolean> {
 		try {
-			if (!(await this.app.vault.adapter.exists(this.sessionFilePath))) {
+			const adapter = this.app.vault.adapter;
+			if (!adapter) return false;
+
+			if (!(await adapter.exists(this.sessionFilePath))) {
 				return false;
 			}
 
-			const raw = await this.app.vault.adapter.read(this.sessionFilePath);
+			const raw = await adapter.read(this.sessionFilePath);
 			const persisted: unknown = JSON.parse(raw);
 
 			if (!persisted || typeof persisted !== "object") {
