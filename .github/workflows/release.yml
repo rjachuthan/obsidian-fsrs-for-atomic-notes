@@ -25,12 +25,27 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Extract version from manifest
+        id: version
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Verify tag matches manifest version
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          manifest_version="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$manifest_version" ]; then
+            echo "Error: Git tag ($tag) does not match manifest.json version ($manifest_version)"
+            echo "Obsidian requires the tag to exactly match the version in manifest.json"
+            echo "Please create a tag named exactly: $manifest_version"
+            exit 1
+          fi
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title="$tag" \
-            --draft \
+          version="${{ steps.version.outputs.version }}"
+          gh release create "$version" \
+            --title="v$version" \
+            --notes="See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md) for details." \
             main.js manifest.json styles.css

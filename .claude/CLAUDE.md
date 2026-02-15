@@ -106,6 +106,43 @@ fix: correct due date calculation for new cards
 refactor(plugin): extract review logic into service
 ```
 
+## Releases
+
+**CRITICAL**: Obsidian plugins require three files in every GitHub release:
+1. `main.js` - Compiled plugin code
+2. `manifest.json` - Plugin metadata
+3. `styles.css` - Plugin styles (even if empty)
+
+**Tag naming**: Release tags MUST exactly match the version in `manifest.json` (no `v` prefix).
+
+### Creating a Release
+
+1. Update version in both `manifest.json` and `versions.json`
+2. Run the release script:
+   ```bash
+   ./scripts/create-release.sh
+   ```
+
+The script will:
+- Verify working directory is clean
+- Run lint and build
+- Verify all three required files exist
+- Create and push a tag (matching manifest.json version exactly)
+- GitHub Actions will automatically create the release with all three files
+
+### Manual Release (if needed)
+
+```bash
+# 1. Update manifest.json and versions.json
+# 2. Build
+npm run build
+
+# 3. Create tag (NO 'v' prefix - must match manifest.json)
+VERSION=$(node -p "require('./manifest.json').version")
+git tag "$VERSION"
+git push origin "$VERSION"
+```
+
 ## Key Files
 
 - `docs/PRD.md` - Full product requirements document
@@ -113,3 +150,4 @@ refactor(plugin): extract review logic into service
 - `AGENTS.md` - Obsidian plugin development guidelines
 - `manifest.json` - Plugin metadata (update version here)
 - `versions.json` - Version → minAppVersion mapping
+- `scripts/create-release.sh` - Automated release script
